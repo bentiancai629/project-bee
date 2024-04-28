@@ -1,0 +1,18 @@
+# mac
+.DS_Store
+
+# IDE
+.vscode
+.idea
+
+# Log
+logs
+*.log
+*debug*
+
+# env
+.env
+
+# User
+tmp
+debug*
