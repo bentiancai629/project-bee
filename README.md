@@ -39,3 +39,6 @@ make test
   -- Encode(tx *Transaction) 
   -- Decode(tx *Transaction)
 
+# ep9 rpc
+
+- rpc.go

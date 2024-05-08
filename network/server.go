@@ -13,6 +13,7 @@ import (
 var defaultBlockTime = 5 * time.Second
 
 type ServerOpts struct {
+	RPCHandler RPCHandler
 	Transports []Transport
 	BlockTime  time.Duration
 	PrivateKey *crypto.PrivateKey
@@ -23,16 +24,16 @@ type Server struct {
 	blockTime   time.Duration
 	memPool     *TxPool
 	isValidator bool
-	rpcCh  chan RPC
-	quitCh chan struct{}
+	rpcCh       chan RPC
+	quitCh      chan struct{}
 }
 
 func NewServer(opts ServerOpts) *Server {
 	if opts.BlockTime == time.Duration(0) {
 		opts.BlockTime = defaultBlockTime
 	}
-	
-	return &Server{
+
+	s := &Server{
 		ServerOpts:  opts,
 		blockTime:   opts.BlockTime,
 		memPool:     NewTxPool(),
@@ -40,6 +41,12 @@ func NewServer(opts ServerOpts) *Server {
 		rpcCh:       make(chan RPC),
 		quitCh:      make(chan struct{}, 1),
 	}
+	if opts.RPCHandler == nil {
+		opts.RPCHandler = NewDefaultRPCHandler(s)
+	}
+
+	s.ServerOpts = opts
+	return s
 }
 
 func (s *Server) Start() {
@@ -51,11 +58,19 @@ free:
 	for {
 		select {
 		case rpc := <-s.rpcCh:
-			fmt.Printf("From %s with Payload: %s\n", rpc.From, string(rpc.Payload))
+			// buf := make([]byte, 10)
+			// rpc.Payload.Read(buf)
+			// fmt.Printf("From %s with Payload: %v \n", rpc.From, buf)
+			if err := s.RPCHandler.HandleRPC(rpc); err != nil {
+				logrus.Error(err)
+			}
 		case <-s.quitCh:
 			break free
 		case <-ticker.C:
 			fmt.Println("do stuff every 5 seconds")
+			if s.isValidator {
+				s.createNewBlock()
+			}
 		}
 	}
 
@@ -75,13 +90,40 @@ func (s *Server) handleTransaction(tx *core.Transaction) error {
 	logrus.WithFields(logrus.Fields{
 		"hash": hash,
 	}).Info("transaction already in mempool")
-	if s.memPool.Has(&hash) {
+	if s.memPool.Has(hash) {
 		return nil
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"hash": hash,
 	}).Info("adding new tx to the mempool")
+
+	return s.memPool.Add(tx)
+}
+
+func (s *Server) ProcessTransaction(from NetAddr, tx *core.Transaction) error {
+	hash := tx.Hash(core.TxHasher{})
+
+	if s.memPool.Has(hash) {
+		logrus.WithFields(logrus.Fields{
+			"hash": hash,
+		}).Info("transaction already in mempool")
+
+		return nil
+	}
+
+	if err := tx.Verify(); err != nil {
+		return err
+	}
+
+	tx.SetFirstSeen(time.Now().UnixNano())
+
+	logrus.WithFields(logrus.Fields{
+		"hash":           hash,
+		"mempool length": s.memPool.Len(),
+	}).Info("adding new tx to the mempool")
+
+	// TODO(@anthdm): broadcast this tx to peers
 
 	return s.memPool.Add(tx)
 }

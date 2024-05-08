@@ -57,8 +57,8 @@ func (p *TxPool) Add(tx *core.Transaction) error {
 	return nil
 }
 
-func (p *TxPool) Has(hash *types.Hash) bool {
-	_, ok := p.transactions[*hash]
+func (p *TxPool) Has(hash types.Hash) bool {
+	_, ok := p.transactions[hash]
 	return ok
 }
 
