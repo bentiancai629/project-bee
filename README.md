@@ -12,8 +12,6 @@ make test
 - 验证区块头 hash
 
 # ep7 内存池
-
-
 - blockchain.go 
     -- GetHeader() 增加 	bc.lock.Lock()
     -- Height() 增加 	bc.lock.RLock()
@@ -28,3 +26,16 @@ make test
 
 - server.go 
   -- handleTransaction()
+
+# ep8 内存池
+
+- txPool.go
+  -- NewTxMapSorter()  FIFO的tx排序方法
+   
+- txPool_test.go
+   -- TestSortTransactions()
+
+- encoding.go 注册elliptic.P256()椭圆曲线的签名算法
+  -- Encode(tx *Transaction) 
+  -- Decode(tx *Transaction)
+

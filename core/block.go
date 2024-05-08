@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"encoding/gob"
-	"io"
 	"fmt"
 
 	"project-bee/crypto"
@@ -69,7 +68,7 @@ func (b *Block) Verify() error {
 		return fmt.Errorf("block has invalid signature")
 	}
 
-	for _,tx := range b.Transactions {
+	for _, tx := range b.Transactions {
 		if err := tx.Verify(); err != nil {
 			return err
 		}
@@ -78,12 +77,12 @@ func (b *Block) Verify() error {
 	return nil
 }
 
-func (b *Block) Decode(r io.Reader, dec Decoder[*Block]) error {
-	return dec.Decode(r, b)
+func (b *Block) Decode(dec Decoder[*Block]) error {
+	return dec.Decode(b)
 }
 
-func (b *Block) Encode(w io.Writer, enc Encoder[*Block]) error {
-	return enc.Encode(w, b)
+func (b *Block) Encode(enc Encoder[*Block]) error {
+	return enc.Encode(b)
 }
 
 // 对 header 哈西
@@ -112,4 +111,3 @@ func (b *Block) Hash(hasher Hasher[*Header]) types.Hash {
 
 // 	return buf.Bytes()
 // }
-

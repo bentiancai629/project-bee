@@ -1,8 +1,11 @@
 package network
 
 import (
-	"project-bee/core"
+	"math/rand"
+	"strconv"
 	"testing"
+
+	"project-bee/core"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -24,4 +27,22 @@ func TestTxPoolAddTx(t *testing.T) {
 
 	p.Flush()
 	assert.Equal(t, p.Len(), 0)
+}
+
+func TestSortTransactions(t *testing.T) {
+	p := NewTxPool()
+	txLen := 1000
+
+	for i := 0; i < txLen; i++ {
+		tx := core.NewTransaction([]byte(strconv.FormatInt(int64(i), 10)))
+		tx.SetFirstSeen(int64(i * rand.Intn(10000)))
+		assert.Nil(t, p.Add(tx))
+	}
+
+	assert.Equal(t, txLen, p.Len())
+
+	txs := p.Transactions()
+	for i := 0; i < len(txs)-1; i++ {
+		assert.True(t, txs[i].FirstSeen() < txs[i+1].FirstSeen())
+	}
 }

@@ -15,6 +15,9 @@ type Transaction struct {
 
 	// cached version of the tx data hash
 	hash types.Hash
+
+	// firstSeen is the timestamp of when this tx is first seen locally
+	firstSeen int64
 }
 
 func NewTransaction(data []byte) *Transaction {
@@ -22,6 +25,7 @@ func NewTransaction(data []byte) *Transaction {
 		Data: data,
 	}
 }
+
 // 对 tx data进行 hash  用 tx: map[txHash]Data 保存
 func (tx *Transaction) Hash(hasher Hasher[*Transaction]) types.Hash {
 	if tx.hash.IsZero() {
@@ -53,4 +57,20 @@ func (tx *Transaction) Verify() error {
 	}
 
 	return nil
+}
+
+func (tx *Transaction) Decode(dec Decoder[*Transaction]) error {
+	return dec.Decode(tx)
+}
+
+func (tx *Transaction) Encode(enc Encoder[*Transaction]) error {
+	return enc.Encode(tx)
+}
+
+func (tx *Transaction) SetFirstSeen(t int64) {
+	tx.firstSeen = t
+}
+
+func (tx *Transaction) FirstSeen() int64 {
+	return tx.firstSeen
 }

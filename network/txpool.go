@@ -1,9 +1,39 @@
 package network
 
 import (
+	"sort"
+
 	"project-bee/core"
 	"project-bee/types"
 )
+
+type TxMapSorter struct {
+	transactions []*core.Transaction
+}
+
+func NewTxMapSorter(txMap map[types.Hash]*core.Transaction) *TxMapSorter {
+	txs := make([]*core.Transaction, len(txMap))
+
+	i := 0
+	for _, val := range txMap {
+		txs[i] = val
+		i++
+	}
+
+	s := &TxMapSorter{txs}
+
+	sort.Sort(s)
+
+	return s
+}
+
+func (s *TxMapSorter) Len() int { return len(s.transactions) }
+func (s *TxMapSorter) Swap(i, j int) {
+	s.transactions[i], s.transactions[j] = s.transactions[j], s.transactions[i]
+}
+func (s *TxMapSorter) Less(i, j int) bool {
+	return s.transactions[i].FirstSeen() < s.transactions[j].FirstSeen()
+}
 
 type TxPool struct {
 	transactions map[types.Hash]*core.Transaction
@@ -13,6 +43,11 @@ func NewTxPool() *TxPool {
 	return &TxPool{
 		transactions: make(map[types.Hash]*core.Transaction),
 	}
+}
+
+func (p *TxPool) Transactions() []*core.Transaction {
+	s := NewTxMapSorter(p.transactions)
+	return s.transactions
 }
 
 func (p *TxPool) Add(tx *core.Transaction) error {

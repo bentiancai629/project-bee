@@ -1,10 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"project-bee/crypto"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSignTransaction(t *testing.T) {
@@ -32,13 +34,20 @@ func TestVerifyTransaction(t *testing.T) {
 	assert.NotNil(t, tx.Verify())
 }
 
+func TestTxEncodeDecode(t *testing.T) {
+	tx := randomTxWithSignature(t)
+	buf := &bytes.Buffer{}
+	assert.Nil(t, tx.Encode(NewGobTxEncoder(buf)))
+
+	txDecoded := new(Transaction)
+	assert.Nil(t, txDecoded.Decode(NewGobTxDecoder(buf)))
+	assert.Equal(t, tx, txDecoded)
+}
 func randomTxWithSignature(t *testing.T) *Transaction {
 	privKey := crypto.GeneratePrivateKey()
-
 	tx := &Transaction{
 		Data: []byte("foo"),
 	}
 	assert.Nil(t, tx.Sign(privKey))
-
 	return tx
 }
