@@ -3,8 +3,8 @@ package core
 import (
 	"fmt"
 
-
 	"project-bee/crypto"
+	"project-bee/types"
 )
 
 type Transaction struct {
@@ -12,11 +12,23 @@ type Transaction struct {
 
 	From      crypto.PublicKey
 	Signature *crypto.Signature
+
+	// cached version of the tx data hash
+	hash types.Hash
 }
 
-// func (tx *Transaction) DecodeBinary(r io.Reader) error { return nil }
-
-// func (tx *Transaction) EncodeBinary(w io.Writer) error { return nil }
+func NewTransaction(data []byte) *Transaction {
+	return &Transaction{
+		Data: data,
+	}
+}
+// 对 tx data进行 hash  用 tx: map[txHash]Data 保存
+func (tx *Transaction) Hash(hasher Hasher[*Transaction]) types.Hash {
+	if tx.hash.IsZero() {
+		tx.hash = hasher.Hash(tx)
+	}
+	return tx.hash
+}
 
 func (tx *Transaction) Sign(privKey crypto.PrivateKey) error {
 
