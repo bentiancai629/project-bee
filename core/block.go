@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	"time"
 
 	"project-bee/crypto"
 	"project-bee/types"
@@ -36,11 +37,28 @@ type Block struct {
 	hash types.Hash
 }
 
-func NewBlock(h *Header, txs []Transaction) *Block {
+func NewBlock(h *Header, txs []Transaction) (*Block, error) {
 	return &Block{
 		Header:       h,
 		Transactions: txs,
+	}, nil
+}
+
+func NewBlockFromPrevHeader(prevHeader *Header, txs []Transaction) (*Block, error) {
+	dataHash, err := CalculateDataHash(txs)
+	if err != nil {
+		return nil, err
 	}
+
+	header := &Header{
+		Version:       1,
+		Height:        prevHeader.Height + 1,
+		DataHash:      dataHash,
+		PrevBlockHash: BlockHasher{}.Hash(prevHeader),
+		Timestamp:     time.Now().UnixNano(),
+	}
+
+	return NewBlock(header, txs)
 }
 
 func (b *Block) AddTransaction(tx *Transaction) {
@@ -74,6 +92,15 @@ func (b *Block) Verify() error {
 		}
 	}
 
+	// 验证交易
+	dataHash, err := CalculateDataHash(b.Transactions)
+	if err != nil {
+		return err
+	}
+	if dataHash != b.DataHash {
+		return fmt.Errorf("block (%s) has an invalid data hash", b.Hash(BlockHasher{}))
+	}
+
 	return nil
 }
 
@@ -93,21 +120,14 @@ func (b *Block) Hash(hasher Hasher[*Header]) types.Hash {
 
 	return b.hash
 }
+func CalculateDataHash(txs []Transaction) (hash types.Hash, err error) {
+	buf := &bytes.Buffer{}
 
-// 对区块hash
-// func (b *Block) Hash(hasher Hasher[*Block]) types.Hash {
-// 	if b.hash.IsZero() {
-// 		b.hash = hasher.Hash(b)
-// 	}
+	for _, tx := range txs {
+		if err := gob.NewEncoder(buf).Encode(tx); err != nil {
+			return types.Hash{}, err
+		}
+	}
 
-// 	return b.hash
-// }
-
-// // header 序列化
-// func (b *Block) HeaderData() []byte {
-// 	buf := &bytes.Buffer{}
-// 	enc := gob.NewEncoder(buf)
-// 	enc.Encode(b.Header)
-
-// 	return buf.Bytes()
-// }
+	return types.HashFromBytes(buf.Bytes()), nil
+}

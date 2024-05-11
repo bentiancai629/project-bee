@@ -1,14 +1,15 @@
 package main
 
 import (
-	"time"
 	"bytes"
-	"strconv"
 	"math/rand"
+	"strconv"
+	"time"
+	"log"
 
-	"project-bee/network"
 	"project-bee/core"
 	"project-bee/crypto"
+	"project-bee/network"
 
 	"github.com/sirupsen/logrus"
 )
@@ -22,7 +23,6 @@ func main() {
 
 	go func() {
 		for {
-			// trRemote.SendMessage(trLocal.Addr(), []byte("hello local"))
 			if err := sendTransaction(trRemote, trLocal.Addr()); err != nil {
 				logrus.Error(err)
 			}
@@ -30,12 +30,17 @@ func main() {
 		}
 	}()
 
+	privKey := crypto.GeneratePrivateKey()
 	opts := network.ServerOpts{
+		PrivateKey: &privKey,
+		ID:         "LOCAL",
 		Transports: []network.Transport{trLocal},
 	}
 
-	s := network.NewServer(opts)
-
+	s, err := network.NewServer(opts)
+	if err != nil {
+		log.Fatal(err)
+	}
 	s.Start()
 }
 

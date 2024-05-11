@@ -1,9 +1,9 @@
 # project-bee
-
 ```shell
 make run
 make test
 ```
+
 # ep5 区块头    
 
 # ep6 验证区块
@@ -25,20 +25,34 @@ make test
 - 增加 txPool_test.go
 
 - server.go 
-  -- handleTransaction()
+    -- handleTransaction()
 
 # ep8 内存池
-
 - txPool.go
-  -- NewTxMapSorter()  FIFO的tx排序方法
+    -- NewTxMapSorter()  FIFO的tx排序方法
    
 - txPool_test.go
-   -- TestSortTransactions()
+    -- TestSortTransactions()
 
 - encoding.go 注册elliptic.P256()椭圆曲线的签名算法
-  -- Encode(tx *Transaction) 
-  -- Decode(tx *Transaction)
+    -- Encode(tx *Transaction) 
+    -- Decode(tx *Transaction)
 
 # ep9 rpc
-
 - rpc.go
+    -- DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error)
+    -- RPCProcessor interface{}
+
+# ep10 rpc
+- server.go
+  -- processTransaction()
+
+- localTransfer.go
+  -- Broadcast(payload []byte)
+
+# ep11 1st block
+
+- server.go
+  -- ServerOpts struct 
+  -- Server struct
+  
