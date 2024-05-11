@@ -2,6 +2,8 @@ package types
 
 import (
 	"crypto/rand"
+	"encoding/hex"
+
 	"fmt"
 )
 
@@ -21,6 +23,10 @@ func (h Hash) ToSlice() []byte {
 		b[i] = h[i]
 	}
 	return b
+}
+
+func (h Hash) ToHexString() string {
+	return hex.EncodeToString(h[:])
 }
 func HashFromBytes(b []byte) Hash {
 	if len(b) != 32 {

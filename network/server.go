@@ -10,6 +10,7 @@ import (
 	"project-bee/types"
 
 	"github.com/go-kit/log"
+	// "github.com/sirupsen/logrus"
 )
 
 var defaultBlockTime = 5 * time.Second
@@ -136,7 +137,6 @@ func (s *Server) broadcast(payload []byte) error {
 
 func (s *Server) processTransaction(tx *core.Transaction) error {
 	hash := tx.Hash(core.TxHasher{})
-
 	if s.memPool.Has(hash) {
 		return nil
 	}
@@ -149,7 +149,7 @@ func (s *Server) processTransaction(tx *core.Transaction) error {
 
 	s.Logger.Log(
 		"msg", "adding new tx to mempool",
-		"hash", hash,
+		"hash", hash.ToHexString(),
 		"mempoolLength", s.memPool.Len(),
 	)
 

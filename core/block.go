@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/gob"
 	"fmt"
 	"time"
@@ -124,10 +125,10 @@ func CalculateDataHash(txs []Transaction) (hash types.Hash, err error) {
 	buf := &bytes.Buffer{}
 
 	for _, tx := range txs {
-		if err := gob.NewEncoder(buf).Encode(tx); err != nil {
-			return types.Hash{}, err
+		if err = tx.Encode(NewGobTxEncoder(buf)); err != nil {
+			return
 		}
 	}
-
-	return types.HashFromBytes(buf.Bytes()), nil
+	hash = sha256.Sum256(buf.Bytes())
+	return
 }
