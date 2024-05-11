@@ -39,7 +39,7 @@ func (t *LocalTransport) SendMessage(to NetAddr, payload []byte) error {
 
 	peer, ok := t.peers[to] // map 里是否存在 to 地址的 LocalTransport实例
 	if !ok {
-		return fmt.Errorf("%s: could not send message to %s", t.addr, to)
+		return fmt.Errorf("%s: could not send message to unknow_peer %s", t.addr, to)
 	}
 
 	peer.consumeCh <- RPC{
