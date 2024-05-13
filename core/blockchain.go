@@ -13,14 +13,18 @@ type Blockchain struct {
 	lock      sync.RWMutex
 	headers   []*Header
 	validator Validator
+
+	contractState *State
 }
 
 func NewBlockchain(l log.Logger, genesis *Block) (*Blockchain, error) {
 
 	bc := &Blockchain{
-		headers: []*Header{},
-		store:   NewMemorystore(),
-		logger:  l,
+		// 合约状态存储
+		contractState: NewState(),
+		headers:       []*Header{},
+		store:         NewMemorystore(),
+		logger:        l,
 	}
 	bc.validator = NewBlockchainValidator(bc)
 
@@ -35,6 +39,20 @@ func (bc *Blockchain) SetValidator(v Validator) {
 func (bc *Blockchain) AddBlock(b *Block) error {
 	if err := bc.validator.ValidateBlock(b); err != nil {
 		return err
+	}
+
+	// 执行合约内的交易
+	for _, tx := range b.Transactions {
+		bc.logger.Log("msg", "executing code", "len", len(tx.Data), "hash", tx.Hash(&TxHasher{}).ToHexString())
+
+		vm := NewVM(tx.Data, bc.contractState)
+		if err := vm.Run(); err != nil {
+			return err
+		}
+
+		// result := vm.stack.Pop()
+		// bc.logger.Log("vm result: " , result)
+		fmt.Printf("STATE: %+v\n", vm.contractState)
 	}
 
 	return bc.addBlockWithoutValidation(b)
