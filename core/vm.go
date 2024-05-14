@@ -2,7 +2,6 @@ package core
 
 import (
 	"encoding/binary"
-	"fmt"
 )
 
 type Instruction byte
@@ -14,11 +13,14 @@ const (
 	InstrPack     Instruction = 0x0d
 	InstrSub      Instruction = 0x0e // 1
 	InstrStore    Instruction = 0x0f // 1
+	InstrGet      Instruction = 0xae // 1
+	InstrMul      Instruction = 0xea // 1
+	InstrDiv      Instruction = 0xfd // 1
 )
 
 type Stack struct {
 	data []any
-	sp   int
+	sp   int //stack pointer
 }
 
 func NewStack(size int) *Stack {
@@ -27,10 +29,16 @@ func NewStack(size int) *Stack {
 		sp:   0,
 	}
 }
+
 func (s *Stack) Push(v any) {
-	s.data[s.sp] = v
+	s.data = append([]any{v}, s.data...)
 	s.sp++
 }
+
+// func (s *Stack) Push(v any) {
+// 	s.data[s.sp] = v
+// 	s.sp++
+// }
 
 func (s *Stack) Pop() any {
 	value := s.data[0]
@@ -74,6 +82,16 @@ func (vm *VM) Run() error {
 
 func (vm *VM) Exec(instr Instruction) error {
 	switch instr {
+	case InstrGet:
+		var (
+			key = vm.stack.Pop().([]byte)
+		)
+		value, error := vm.contractState.Get(key)
+		if error != nil {
+			return nil
+		}
+
+		vm.stack.Push(value)
 	case InstrStore:
 
 		var (
@@ -88,13 +106,14 @@ func (vm *VM) Exec(instr Instruction) error {
 			panic("TODO: unknow type")
 		}
 
-		fmt.Printf("key:%v value:%v\n", key, value)
+		// fmt.Printf("key:%v value:%v\n", key, value)
 
 		vm.contractState.Put(key, serializedValue)
 	case InstrPushInt:
 		vm.stack.Push(int(vm.data[vm.ip-1]))
 	case InstrPushByte:
 		vm.stack.Push(byte(vm.data[vm.ip-1]))
+		// 组成 array
 	case InstrPack:
 		n := vm.stack.Pop().(int)
 		b := make([]byte, n)
@@ -108,11 +127,20 @@ func (vm *VM) Exec(instr Instruction) error {
 		b := vm.stack.Pop().(int)
 		c := a - b
 		vm.stack.Push(c)
-
 	case InstrAdd:
 		a := vm.stack.Pop().(int)
 		b := vm.stack.Pop().(int)
 		c := a + b
+		vm.stack.Push(c)
+	case InstrMul:
+		a := vm.stack.Pop().(int)
+		b := vm.stack.Pop().(int)
+		c := a * b
+		vm.stack.Push(c)
+	case InstrDiv:
+		a := vm.stack.Pop().(int)
+		b := vm.stack.Pop().(int)
+		c := a / b
 		vm.stack.Push(c)
 	}
 
@@ -129,8 +157,3 @@ func serialzeInt64(value int64) []byte {
 func deserializeInt64(b []byte) int64 {
 	return int64(binary.LittleEndian.Uint64(b))
 }
-
-// func (vm *VM) pushStack(b byte) {
-// 	vm.sp++
-// 	vm.stack[vm.sp] = b
-// }
