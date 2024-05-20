@@ -17,6 +17,9 @@ const (
 	MessageTypeTx        MessageType = 0x1
 	MessageTypeBock      MessageType = 0x2
 	MessageTypeGetBlocks MessageType = 0x3
+	MessageTypeStatus    MessageType = 0x4
+	MessageTypeGetStatus MessageType = 0x5
+	MessageTypeBlocks    MessageType = 0x6
 )
 
 type RPC struct {
@@ -81,6 +84,31 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 		return &DecodedMessage{
 			From: rpc.From,
 			Data: block,
+		}, nil
+	case MessageTypeGetStatus:
+		return &DecodedMessage{
+			From: rpc.From,
+			Data: &GetStatusMessage{},
+		}, nil
+	case MessageTypeStatus:
+		statusMessage := new(StatusMessage)
+		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(statusMessage); err != nil {
+			return nil, err
+		}
+
+		return &DecodedMessage{
+			From: rpc.From,
+			Data: statusMessage,
+		}, nil
+	case MessageTypeGetBlocks:
+		getBlocks := new(GetBlocksMessage)
+		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(getBlocks); err != nil {
+			return nil, err
+		}
+
+		return &DecodedMessage{
+			From: rpc.From,
+			Data: getBlocks,
 		}, nil
 	default:
 		return nil, fmt.Errorf("invalid message header %x", msg.Header)

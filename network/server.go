@@ -2,6 +2,7 @@ package network
 
 import (
 	"bytes"
+	"encoding/gob"
 	"os"
 	"time"
 
@@ -16,6 +17,7 @@ var defaultBlockTime = 5 * time.Second
 
 type ServerOpts struct {
 	ID            string
+	Transport     Transport
 	Logger        log.Logger
 	RPCDecodeFunc RPCDecodeFunc
 	RPCProcessor  RPCProcessor
@@ -45,7 +47,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 
 	if opts.Logger == nil {
 		opts.Logger = log.NewLogfmtLogger(os.Stderr)
-		opts.Logger = log.With(opts.Logger, "ID", opts.ID)
+		opts.Logger = log.With(opts.Logger, "addr", opts.Transport.Addr())
 	}
 
 	chain, err := core.NewBlockchain(opts.Logger, genesisBlock())
@@ -72,13 +74,22 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		go s.validatorLoop()
 	}
 
+	// 处理节点之间的通信 synchronization
+	// for _, tr := range s.Transports {
+	// 	if err := s.sendGetStatusMessage(tr); err != nil {
+	// 		s.Logger.Log("send get status error", err)
+	// 	}
+	// }
+
+	s.bootstrapNodes()
+
 	return s, nil
 
 }
 
 func (s *Server) Start() {
 	s.initTransports()
-	ticker := time.NewTicker(5 * time.Second)
+	// ticker := time.NewTicker(5 * time.Second)
 free:
 	for {
 		select {
@@ -90,21 +101,39 @@ free:
 			}
 
 			if err := s.RPCProcessor.ProcessMessage(msg); err != nil {
-				s.Logger.Log("error", err)
+				// 过滤掉 已经同步的 err
+				if err != core.ErrBlockKnown {
+					s.Logger.Log("error", err)
+				}
 			}
 
 		case <-s.quitCh:
 			break free
-		case <-ticker.C:
-			if s.isValidator {
-				s.createNewBlock()
-			}
+			// case <-ticker.C:
+			// 	if s.isValidator {
+			// 		s.createNewBlock()
+			// 	}
 		}
 	}
 
 	s.Logger.Log("msg", "Server is shutting down")
 }
 
+func (s *Server) bootstrapNodes() {
+	for _, tr := range s.Transports {
+		if s.Transport.Addr() != tr.Addr() {
+			if err := s.Transport.Connect(tr); err != nil {
+				s.Logger.Log("error", "could not connect to remote", "err", err)
+			}
+			s.Logger.Log("msg", "connect to remote", "we", s.Transport.Addr(), "addr", tr.Addr())
+
+			// get statusMsg so we can sync if needed
+			if err := s.sendGetStatusMessage(tr); err != nil {
+				s.Logger.Log("error", "sendGetStatusMessage", "err", err)
+			}
+		}
+	}
+}
 func (s *Server) validatorLoop() {
 	ticker := time.NewTicker(s.BlockTime)
 
@@ -116,15 +145,107 @@ func (s *Server) validatorLoop() {
 	}
 }
 
+// 解析 Message 然后处理
 func (s *Server) ProcessMessage(msg *DecodedMessage) error {
+	// fmt.Printf("receiving message: %+v\n", msg.Data)
 	switch t := msg.Data.(type) {
 	case *core.Transaction:
 		return s.processTransaction(t)
 	case *core.Block:
 		return s.processBlock(t)
+	case *GetStatusMessage:
+		return s.processGetStatusMessage(msg.From, t)
+	case *StatusMessage:
+		return s.processStatusMessage(msg.From, t)
+	case *GetBlocksMessage:
+		return s.processGetBlocksMessage(msg.From, t)
+	case *BlocksMessage:
+		return s.processBlocksMessage(msg.From, t)
 	}
 
 	return nil
+}
+
+func (s *Server) processGetBlocksMessage(from NetAddr, data *GetBlocksMessage) error {
+	s.Logger.Log("msg", "received getBlocks message", "from", from)
+
+	var (
+		blocks    = []*core.Block{}
+		ourHeight = s.chain.Height()
+	)
+
+	if data.To == 0 {
+		for i := int(data.From); i <= int(ourHeight); i++ {
+
+		}
+	}
+
+	blocksMsg := &BlocksMessage{
+		Blocks: blocks,
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(blocksMsg); err != nil {
+		return err
+	}
+
+	// s.mu.RLock()
+	// defer s.mu.RUnlock()
+	msg := NewMessage(MessageTypeBlocks, buf.Bytes())
+	return s.Transport.SendMessage(from, msg.Bytes())
+}
+
+func (s *Server) processBlocksMessage(from NetAddr, data *BlocksMessage) error {
+	return nil
+}
+
+func (s *Server) processStatusMessage(from NetAddr, data *StatusMessage) error {
+	if data.CurrentHeight > s.chain.Height() {
+		s.Logger.Log("msg", "cannot sync blockHeight to low", "ourHeight", s.chain.Height(), "theirHeight", data.CurrentHeight, "addr", from)
+		return nil
+	}
+
+	getBlocksMessage := &GetBlocksMessage{
+		From: s.chain.Height(),
+		To:   0,
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(getBlocksMessage); err != nil {
+		return err
+	}
+
+	msg := NewMessage(MessageTypeGetBlocks, buf.Bytes())
+	return s.Transport.SendMessage(from, msg.Bytes())
+}
+
+// TODO
+func (s *Server) processGetStatusMessage(from NetAddr, data *GetStatusMessage) error {
+	s.Logger.Log("msg", "received getStatus message", "from", from)
+
+	statusMessage := &StatusMessage{
+		CurrentHeight: s.chain.Height(),
+		ID:            s.ID,
+	}
+
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(statusMessage); err != nil {
+		return err
+	}
+
+	// s.mu.RLock()
+	// defer s.mu.RUnlock()
+
+	// peer, ok := s.peerMap[from]
+	// if !ok {
+	// 	return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
+	// }
+
+	msg := NewMessage(MessageTypeStatus, buf.Bytes())
+
+	return s.Transport.SendMessage(from, msg.Bytes())
+	// return peer.Send(msg.Bytes())
+	// return nil
 }
 
 func (s *Server) processBlock(b *core.Block) error {
@@ -155,6 +276,30 @@ func (s *Server) processTransaction(tx *core.Transaction) error {
 
 	go s.broadcastTx(tx)
 	s.mempool.Add(tx)
+
+	return nil
+}
+
+// 节点之间同步高度
+func (s *Server) sendGetStatusMessage(tr Transport) error {
+	var (
+		/*
+			ID            string
+			Version       uint32
+			CurrentHeight uint32
+		*/
+		getStatusMsg = new(GetStatusMessage)
+		buf          = new(bytes.Buffer)
+	)
+	if err := gob.NewEncoder(buf).Encode(getStatusMsg); err != nil {
+		return err
+	}
+
+	// 节点之间同步 message
+	msg := NewMessage(MessageTypeGetStatus, buf.Bytes())
+	if err := s.Transport.SendMessage(tr.Addr(), msg.Bytes()); err != nil {
+		return err
+	}
 
 	return nil
 }

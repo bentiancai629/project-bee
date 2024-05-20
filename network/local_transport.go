@@ -37,6 +37,10 @@ func (t *LocalTransport) SendMessage(to NetAddr, payload []byte) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
+	if t.addr == to {
+		return nil
+	}
+
 	peer, ok := t.peers[to] // map 里是否存在 to 地址的 LocalTransport实例
 	if !ok {
 		return fmt.Errorf("%s: could not send message to unknow_peer %s", t.addr, to)
