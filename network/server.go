@@ -3,6 +3,8 @@ package network
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 var defaultBlockTime = 5 * time.Second
 
 type ServerOpts struct {
+	ListenAddr    string
 	TCPTransport  *TCPTransport
 	ID            string
 	Logger        log.Logger
@@ -27,6 +30,10 @@ type ServerOpts struct {
 }
 
 type Server struct {
+	TCPTransport *TCPTransport
+	peerMap      map[net.Addr]*TCPPeer
+	peerCh       chan *TCPPeer
+
 	ServerOpts
 	mempool     *TxPool
 	chain       *core.Blockchain
@@ -54,15 +61,21 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		return nil, err
 	}
 
+	peerCh := make(chan *TCPPeer)
+	tr := NewTCPTransport(opts.ListenAddr, peerCh)
 	s := &Server{
-		ServerOpts:  opts,
-		chain:       chain,
-		mempool:     NewTxPool(1000),
-		isValidator: opts.PrivateKey != nil,
-		rpcCh:       make(chan RPC),
-		quitCh:      make(chan struct{}, 1),
+		TCPTransport: tr,
+		peerCh:       peerCh,
+		peerMap:      make(map[net.Addr]*TCPPeer),
+		ServerOpts:   opts,
+		chain:        chain,
+		mempool:      NewTxPool(1000),
+		isValidator:  opts.PrivateKey != nil,
+		rpcCh:        make(chan RPC),
+		quitCh:       make(chan struct{}, 1),
 	}
 
+	s.TCPTransport.peerCh = peerCh
 	// If we dont got any processor from the server options, we going to use
 	// the server as default.
 	if s.RPCProcessor == nil {
@@ -76,13 +89,15 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	return s, nil
 
 }
- 
+
 func (s *Server) Start() {
 	// 并发启动监听
 	s.TCPTransport.Start()
 free:
 	for {
 		select {
+		case peer := <-s.peerCh:
+			fmt.Printf("New peer: %+v\n", peer)
 		case rpc := <-s.rpcCh:
 
 			msg, err := s.RPCDecodeFunc(rpc)

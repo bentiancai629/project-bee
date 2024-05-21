@@ -31,9 +31,9 @@ func main() {
 
 func makeServer(id string, pk *crypto.PrivateKey) *network.Server {
 	opts := network.ServerOpts{
-		TCPTransport: network.NewTCPTransport(":3000"),
-		PrivateKey:   pk,
-		ID:           id,
+		ListenAddr: ":3000",
+		PrivateKey: pk,
+		ID:         id,
 	}
 
 	s, err := network.NewServer(opts)
@@ -57,12 +57,12 @@ func tcpTester() {
 
 }
 
-var transports = []network.Transport{
-	network.NewLocalTransport("LOCAL"),
-	// network.NewLocalTransport("REMOTE_A"),
-	// network.NewLocalTransport("REMOTE_B"),
-	// network.NewLocalTransport("REMOTE_C"),
-}
+// var transports = []network.Transport{
+// 	network.NewLocalTransport("LOCAL"),
+// 	// network.NewLocalTransport("REMOTE_A"),
+// 	// network.NewLocalTransport("REMOTE_B"),
+// 	// network.NewLocalTransport("REMOTE_C"),
+// }
 
 // func main1() {
 

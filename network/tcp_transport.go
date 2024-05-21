@@ -22,9 +22,10 @@ type TCPTransport struct {
 	listener   net.Listener
 }
 
-func NewTCPTransport(addr string) *TCPTransport {
+func NewTCPTransport(addr string, peerCh chan *TCPPeer) *TCPTransport {
 	return &TCPTransport{
 		listenAddr: addr,
+		peerCh:     peerCh,
 	}
 }
 
@@ -49,8 +50,6 @@ func (t *TCPTransport) readLoop(peer *TCPPeer) {
 	}
 }
 
-
-
 func (t *TCPTransport) acceptLoop() {
 	for {
 		conn, err := t.listener.Accept()
@@ -62,10 +61,12 @@ func (t *TCPTransport) acceptLoop() {
 			conn: conn,
 		}
 
-		// fmt.Printf("new incoming TCP connection =>%+v\n", conn)
+		t.peerCh <- peer
+
+		fmt.Printf("new incoming TCP connection =>%+v\n", conn)
 
 		go t.readLoop(peer)
-		// t.peerCh <- peer
+
 	}
 }
 
