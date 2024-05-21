@@ -4,14 +4,14 @@ make run
 make test
 ```
 
-# ep5 区块头    
+# ep5 block header
 
-# ep6 验证区块
+# ep6 verify block
 - 生成随机区块
 - header 的 hash 方法
 - 验证区块头 hash
 
-# ep7 内存池
+# ep7 mem pool
 - blockchain.go 
     -- GetHeader() 增加 	bc.lock.Lock()
     -- Height() 增加 	bc.lock.RLock()
@@ -27,7 +27,7 @@ make test
 - server.go 
     -- handleTransaction()
 
-# ep8 内存池
+# ep8 mem pool
 - txPool.go
     -- NewTxMapSorter()  FIFO的tx排序方法
    
