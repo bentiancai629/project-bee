@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"bytes"
 )
 
 type TCPPeer struct {
@@ -13,7 +14,30 @@ type TCPPeer struct {
 
 func (p *TCPPeer) Send(b []byte) error {
 	_, err := p.conn.Write(b)
-	return err
+	return err 
+}
+
+func (p *TCPPeer) readLoop(rpcCh chan RPC) {
+	buf := make([]byte, 4096)
+	for {
+		n, err := p.conn.Read(buf)
+		if err == io.EOF {
+			continue
+		}
+		if err != nil {
+			fmt.Printf("read error: %s", err)
+			continue
+		}
+
+		msg := buf[:n]
+
+		fmt.Println("read msg: ", string(msg))
+
+		rpcCh <- RPC{
+			From:    p.conn.RemoteAddr(),
+			Payload: bytes.NewReader(msg),
+		}
+	}
 }
 
 type TCPTransport struct {
@@ -26,27 +50,6 @@ func NewTCPTransport(addr string, peerCh chan *TCPPeer) *TCPTransport {
 	return &TCPTransport{
 		listenAddr: addr,
 		peerCh:     peerCh,
-	}
-}
-
-func (t *TCPTransport) readLoop(peer *TCPPeer) {
-	buf := make([]byte, 2048)
-	for {
-		n, err := peer.conn.Read(buf)
-		if err == io.EOF {
-			continue
-		}
-		if err != nil {
-			fmt.Printf("read error: %s", err)
-			continue
-		}
-
-		msg := buf[:n]
-		fmt.Println("read msg: ", string(msg))
-		// rpcCh <- RPC{
-		// 	From:    p.conn.RemoteAddr(),
-		// 	Payload: bytes.NewReader(msg),
-		// }
 	}
 }
 
@@ -63,9 +66,9 @@ func (t *TCPTransport) acceptLoop() {
 
 		t.peerCh <- peer
 
-		fmt.Printf("new incoming TCP connection =>%+v\n", conn)
+		// fmt.Printf("new incoming TCP connection =>%+v\n", conn)
 
-		go t.readLoop(peer)
+		// go t.readLoop(peer)
 
 	}
 }

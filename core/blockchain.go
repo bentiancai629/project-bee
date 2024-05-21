@@ -50,8 +50,8 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 			return err
 		}
 
-		// result := vm.stack.Pop()
-		// bc.logger.Log("vm result: " , result)
+		result := vm.stack.Pop()
+		bc.logger.Log("vm result: " , result)
 		
 		// fmt.Printf("STATE: %+v\n", vm.contractState)
 	}

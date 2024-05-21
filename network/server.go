@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"project-bee/core"
@@ -18,6 +19,7 @@ import (
 var defaultBlockTime = 5 * time.Second
 
 type ServerOpts struct {
+	SeedNodes     []string
 	ListenAddr    string
 	TCPTransport  *TCPTransport
 	ID            string
@@ -31,8 +33,10 @@ type ServerOpts struct {
 
 type Server struct {
 	TCPTransport *TCPTransport
-	peerMap      map[net.Addr]*TCPPeer
 	peerCh       chan *TCPPeer
+
+	mu      sync.RWMutex
+	peerMap map[net.Addr]*TCPPeer
 
 	ServerOpts
 	mempool     *TxPool
@@ -53,7 +57,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 
 	if opts.Logger == nil {
 		opts.Logger = log.NewLogfmtLogger(os.Stderr)
-		// opts.Logger = log.With(opts.Logger, "addr", opts.Transport.Addr())
+		opts.Logger = log.With(opts.Logger, "addr", opts.ID)
 	}
 
 	chain, err := core.NewBlockchain(opts.Logger, genesisBlock())
@@ -90,19 +94,46 @@ func NewServer(opts ServerOpts) (*Server, error) {
 
 }
 
+func (s *Server) bootsrapNetwork() {
+	for _, addr := range s.SeedNodes {
+		fmt.Println("trying to connect to ", addr)
+		go func(addr string) {
+			conn, err := net.Dial("tcp", addr)
+			if err != nil {
+				fmt.Printf("could not connect to %+v\n", conn)
+				return
+			}
+			s.peerCh <- &TCPPeer{
+				conn: conn,
+			}
+		}(addr)
+	}
+}
+
 func (s *Server) Start() {
+
 	// 并发启动监听
 	s.TCPTransport.Start()
+	time.Sleep(1 * time.Second)
+
+	s.bootsrapNetwork()
+
+	s.Logger.Log("msg", "accepting TCP connection on", "addr", s.ListenAddr, "id", s.ID)
+
 free:
 	for {
 		select {
 		case peer := <-s.peerCh:
-			fmt.Printf("New peer: %+v\n", peer)
-		case rpc := <-s.rpcCh:
+			// add mutex plz
+			s.peerMap[peer.conn.RemoteAddr()] = peer
 
+			go peer.readLoop(s.rpcCh)
+			// s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
+		case rpc := <-s.rpcCh:
 			msg, err := s.RPCDecodeFunc(rpc)
 			if err != nil {
 				s.Logger.Log("error", err)
+				continue
 			}
 
 			if err := s.RPCProcessor.ProcessMessage(msg); err != nil {
@@ -148,44 +179,54 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 	case *StatusMessage:
 		// return s.processStatusMessage(msg.From, t)
 	case *GetBlocksMessage:
-		// return s.processGetBlocksMessage(msg.From, t)
-		// case *BlocksMessage:
-		// 	return s.processBlocksMessage(msg.From, t)
+		return s.processGetBlocksMessage(msg.From, t)
+	case *BlocksMessage:
+		return s.processBlocksMessage(msg.From, t)
 	}
 
 	return nil
 }
 
-// func (s *Server) processGetBlocksMessage(from NetAddr, data *GetBlocksMessage) error {
-// 	s.Logger.Log("msg", "received getBlocks message", "from", from)
+func (s *Server) processGetBlocksMessage(from net.Addr, data *GetBlocksMessage) error {
+	s.Logger.Log("msg", "received getBlocks message", "from", from)
 
-// 	var (
-// 		blocks    = []*core.Block{}
-// 		ourHeight = s.chain.Height()
-// 	)
+	// var (
+	// 	blocks    = []*core.Block{}
+	// 	ourHeight = s.chain.Height()
+	// )
 
-// 	if data.To == 0 {
-// 		for i := int(data.From); i <= int(ourHeight); i++ {
+	// if data.To == 0 {
+	// 	for i := int(data.From); i <= int(ourHeight); i++ {
 
-// 		}
-// 	}
+	// 	}
+	// }
 
-// 	blocksMsg := &BlocksMessage{
-// 		Blocks: blocks,
-// 	}
+	// blocksMsg := &BlocksMessage{
+	// 	Blocks: blocks,
+	// }
 
-// 	buf := new(bytes.Buffer)
-// 	if err := gob.NewEncoder(buf).Encode(blocksMsg); err != nil {
-// 		return err
-// 	}
+	// buf := new(bytes.Buffer)
+	// if err := gob.NewEncoder(buf).Encode(blocksMsg); err != nil {
+	// 	return err
+	// }
 
-// 	// s.mu.RLock()
-// 	// defer s.mu.RUnlock()
-// 	msg := NewMessage(MessageTypeBlocks, buf.Bytes())
-// 	return s.Transport.SendMessage(from, msg.Bytes())
-// }
+	// // s.mu.RLock()
+	// // defer s.mu.RUnlock()
+	// msg := NewMessage(MessageTypeBlocks, buf.Bytes())
+	// return s.Transport.SendMessage(from, msg.Bytes())
+	return nil
+}
 
-func (s *Server) processBlocksMessage(from NetAddr, data *BlocksMessage) error {
+// 添加区块到链
+func (s *Server) processBlocksMessage(from net.Addr, data *BlocksMessage) error {
+	s.Logger.Log("msg", "received BLOCKS!!!!!!!!", "from", from)
+
+	for _, block := range data.Blocks {
+		if err := s.chain.AddBlock(block); err != nil {
+			s.Logger.Log("error", err.Error())
+			return err
+		}
+	}
 	return nil
 }
 
@@ -296,11 +337,15 @@ func (s *Server) sendGetStatusMessage(tr Transport) error {
 
 // 广播 message	 到所有节点
 func (s *Server) broadcast(payload []byte) error {
-	// for _, tr := range s.Transports {
-	// 	if err := tr.Broadcast(payload); err != nil {
-	// 		return err
-	// 	}
-	// }
+	// s.mu.RLock()
+	// defer s.mu.RUnlock()
+
+	for netAddr, peer := range s.peerMap {
+		if err := peer.Send(payload); err != nil {
+			fmt.Printf("peer send error => addr %s [err: %s]\n", netAddr, err)
+			return err
+		}
+	}
 	return nil
 }
 
