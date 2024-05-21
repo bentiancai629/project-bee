@@ -125,7 +125,8 @@ free:
 		select {
 		case peer := <-s.peerCh:
 			// add mutex plz
-			s.peerMap[peer.conn.RemoteAddr()] = peer
+			// todo comment 
+			// s.peerMap[peer.conn.RemoteAddr()] = peer
 
 			go peer.readLoop(s.rpcCh)
 			// s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())

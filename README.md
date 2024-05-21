@@ -56,3 +56,6 @@ make test
   -- ServerOpts struct 
   -- Server struct
   
+# ep20 TCP
+
+- todo s.peerMap[peer.conn.RemoteAddr()] = peer
