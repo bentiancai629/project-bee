@@ -29,7 +29,7 @@ func GeneratePrivateKey() PrivateKey {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		panic(err)
-	}	
+	}
 
 	return PrivateKey{
 		Key: key,
@@ -37,21 +37,13 @@ func GeneratePrivateKey() PrivateKey {
 }
 
 func (k PrivateKey) PublicKey() PublicKey {
-	return PublicKey{
-		Key: &k.Key.PublicKey,
-	}
+	return elliptic.MarshalCompressed(k.Key.PublicKey, k.Key.PublicKey.X, k.Key.PublicKey.Y)
 }
 
-type PublicKey struct {
-	Key *ecdsa.PublicKey
-}
-
-func (k PublicKey) ToSlice() []byte {
-	return elliptic.MarshalCompressed(k.Key, k.Key.X, k.Key.Y)
-}
+type PublicKey []byte
 
 func (k PublicKey) Address() types.Address {
-	h := sha256.Sum256(k.ToSlice())
+	h := sha256.Sum256(k)
 
 	return types.AddressFromBytes(h[len(h)-20:])
 }
@@ -60,6 +52,12 @@ type Signature struct {
 	S, R *big.Int
 }
 
-func (sig Signature) Verify(pubkey PublicKey, data []byte) bool {
-	return ecdsa.Verify(pubkey.Key, data, sig.R, sig.S)
+func (sig Signature) Verify(pubKey PublicKey, data []byte) bool {
+	x, y := elliptic.UnmarshalCompressed(elliptic.P256(), pubKey)
+	key := &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     x,
+		Y:     y,
+	}
+	return ecdsa.Verify(key, data, sig.R, sig.S)
 }

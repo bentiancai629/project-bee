@@ -248,31 +248,14 @@ func (s *Server) processBlocksMessage(from net.Addr, data *BlocksMessage) error 
 func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error {
 	s.Logger.Log("msg", "received STATUS message", "from", from)
 
-	if data.CurrentHeight > s.chain.Height() {
+	if data.CurrentHeight <= s.chain.Height() {
 		s.Logger.Log("msg", "cannot sync blockHeight to low", "ourHeight", s.chain.Height(), "theirHeight", data.CurrentHeight, "addr", from)
 		return nil
 	}
 
-	getBlocksMessage := &GetBlocksMessage{
-		From: s.chain.Height(),
-		To:   0,
-	}
+	go s.requestBlocksLoop(from)
 
-	buf := new(bytes.Buffer)
-	if err := gob.NewEncoder(buf).Encode(getBlocksMessage); err != nil {
-		return err
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	peer, ok := s.peerMap[from]
-	if !ok {
-		return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
-	}
-
-	msg := NewMessage(MessageTypeGetBlocks, buf.Bytes())
-	return peer.Send(msg.Bytes())
+	return nil
 }
 
 func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) error {
@@ -366,6 +349,41 @@ func (s *Server) broadcast(payload []byte) error {
 	}
 	return nil
 }
+ 
+func (s *Server) requestBlocksLoop(peer net.Addr) error {
+	ticker := time.NewTicker(3 * time.Second)
+
+	for {
+		ourHeight := s.chain.Height()
+
+		s.Logger.Log("msg", "requesting new blocks", "requesting height", ourHeight+1)
+
+		getBlocksMessage := &GetBlocksMessage{
+			From: ourHeight + 1,
+			To:   0,
+		}
+
+		buf := new(bytes.Buffer)
+		if err := gob.NewEncoder(buf).Encode(getBlocksMessage); err != nil {
+			return err
+		}
+
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		msg := NewMessage(MessageTypeGetBlocks, buf.Bytes())
+		peer, ok := s.peerMap[peer]
+		if !ok {
+			return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
+		}
+
+		if err := peer.Send(msg.Bytes()); err != nil {
+			s.Logger.Log("error", "failed to send to peer", "err", err, "peer", peer)
+		}
+
+		<-ticker.C
+	}
+}
 
 func (s *Server) broadcastBlock(b *core.Block) error {
 	buf := &bytes.Buffer{}
@@ -430,5 +448,10 @@ func genesisBlock() *core.Block {
 	}
 
 	b, _ := core.NewBlock(header, nil)
+
+	privKey := crypto.GeneratePrivateKey()
+	if err := b.Sign(privKey); err != nil {
+		panic(err)
+	}
 	return b
 }
