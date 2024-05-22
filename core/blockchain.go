@@ -12,6 +12,7 @@ type Blockchain struct {
 	store     Storage
 	lock      sync.RWMutex
 	headers   []*Header
+	blocks    []*Block
 	validator Validator
 
 	contractState *State
@@ -51,12 +52,34 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 		}
 
 		result := vm.stack.Pop()
-		bc.logger.Log("vm result: " , result)
-		
+		bc.logger.Log("vm result: ", result)
+
 		// fmt.Printf("STATE: %+v\n", vm.contractState)
 	}
 
 	return bc.addBlockWithoutValidation(b)
+}
+// func (bc *Blockchain) GetBlockByHash(hash types.Hash) (*Block, error) {
+// 	bc.lock.Lock()
+// 	defer bc.lock.Unlock()
+
+// 	block, ok := bc.blockStore[hash]
+// 	if !ok {
+// 		return nil, fmt.Errorf("block with hash (%s) not found", hash)
+// 	}
+
+// 	return block, nil
+// }
+
+func (bc *Blockchain) GetBlock(height uint32) (*Block, error) {
+	if height > bc.Height() {
+		return nil, fmt.Errorf("given height (%d) too high", height)
+	}
+
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
+
+	return bc.blocks[height], nil
 }
 
 // 拿到区块头
@@ -85,6 +108,7 @@ func (bc *Blockchain) Height() uint32 {
 func (bc *Blockchain) addBlockWithoutValidation(b *Block) error {
 	bc.lock.Lock()
 	bc.headers = append(bc.headers, b.Header)
+	bc.blocks = append(bc.blocks, b)
 	bc.lock.Unlock()
 
 	bc.logger.Log(

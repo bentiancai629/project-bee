@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"crypto/elliptic"
 
 	"project-bee/core"
 
@@ -76,7 +77,7 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: tx,
 		}, nil
-	case MessageTypeBock:
+	case MessageTypeBock:  // 接收区块？
 		block := new(core.Block)
 		if err := block.Decode(core.NewGobBlockDecoder(bytes.NewReader(msg.Data))); err != nil {
 			return nil, err
@@ -87,11 +88,12 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			Data: block,
 		}, nil
 	case MessageTypeGetStatus:
+
 		return &DecodedMessage{
 			From: rpc.From,
 			Data: &GetStatusMessage{},
 		}, nil
-	case MessageTypeStatus:
+	case MessageTypeStatus: // 同步状态消息
 		statusMessage := new(StatusMessage)
 		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(statusMessage); err != nil {
 			return nil, err
@@ -101,7 +103,7 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: statusMessage,
 		}, nil
-	case MessageTypeGetBlocks:
+	case MessageTypeGetBlocks: // 同步区块信息
 		getBlocks := new(GetBlocksMessage)
 		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(getBlocks); err != nil {
 			return nil, err
@@ -111,6 +113,15 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: getBlocks,
 		}, nil
+	case MessageTypeBlocks: // 同步区块高度
+		blocks := new(BlocksMessage)
+		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(blocks); err != nil {
+			return nil, err
+		}
+		return &DecodedMessage{
+			From: rpc.From,
+			Data: blocks,
+		}, nil
 	default:
 		return nil, fmt.Errorf("invalid message header %x", msg.Header)
 	}
@@ -118,4 +129,8 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 
 type RPCProcessor interface {
 	ProcessMessage(*DecodedMessage) error
+}
+
+func init() {
+	gob.Register(elliptic.P256())
 }

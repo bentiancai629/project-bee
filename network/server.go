@@ -124,12 +124,16 @@ free:
 	for {
 		select {
 		case peer := <-s.peerCh:
-			// add mutex plz
-			// todo comment 
-			// s.peerMap[peer.conn.RemoteAddr()] = peer
+
+			s.peerMap[peer.conn.RemoteAddr()] = peer
 
 			go peer.readLoop(s.rpcCh)
-			// s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
+
+			if err := s.sendGetStatusMessage(peer); err != nil {
+				s.Logger.Log("msg", "failed to send get status message", "err", err)
+				continue
+			}
+			s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
 		case rpc := <-s.rpcCh:
 			msg, err := s.RPCDecodeFunc(rpc)
 			if err != nil {
@@ -169,19 +173,18 @@ func (s *Server) validatorLoop() {
 
 // 解析 Message 然后处理
 func (s *Server) ProcessMessage(msg *DecodedMessage) error {
-	// fmt.Printf("receiving message: %+v\n", msg.Data)
 	switch t := msg.Data.(type) {
 	case *core.Transaction:
 		return s.processTransaction(t)
 	case *core.Block:
 		return s.processBlock(t)
 	case *GetStatusMessage:
-		// return s.processGetStatusMessage(msg.From, t)
+		return s.processGetStatusMessage(msg.From, t)
 	case *StatusMessage:
-		// return s.processStatusMessage(msg.From, t)
+		return s.processStatusMessage(msg.From, t)
 	case *GetBlocksMessage:
 		return s.processGetBlocksMessage(msg.From, t)
-	case *BlocksMessage:
+	case *BlocksMessage: // add block to blockchain
 		return s.processBlocksMessage(msg.From, t)
 	}
 
@@ -191,31 +194,42 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 func (s *Server) processGetBlocksMessage(from net.Addr, data *GetBlocksMessage) error {
 	s.Logger.Log("msg", "received getBlocks message", "from", from)
 
-	// var (
-	// 	blocks    = []*core.Block{}
-	// 	ourHeight = s.chain.Height()
-	// )
+	var (
+		blocks    = []*core.Block{}
+		ourHeight = s.chain.Height()
+	)
 
-	// if data.To == 0 {
-	// 	for i := int(data.From); i <= int(ourHeight); i++ {
+	if data.To == 0 {
+		// 拿到高度
+		for i := int(data.From); i <= int(ourHeight); i++ {
+			block, err := s.chain.GetBlock(uint32(i))
+			if err != nil {
+				return err
+			}
+			blocks = append(blocks, block)
+		}
+	}
 
-	// 	}
-	// }
+	blocksMsg := &BlocksMessage{
+		Blocks: blocks,
+	}
 
-	// blocksMsg := &BlocksMessage{
-	// 	Blocks: blocks,
-	// }
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(blocksMsg); err != nil {
+		return err
+	}
 
-	// buf := new(bytes.Buffer)
-	// if err := gob.NewEncoder(buf).Encode(blocksMsg); err != nil {
-	// 	return err
-	// }
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-	// // s.mu.RLock()
-	// // defer s.mu.RUnlock()
-	// msg := NewMessage(MessageTypeBlocks, buf.Bytes())
-	// return s.Transport.SendMessage(from, msg.Bytes())
-	return nil
+	msg := NewMessage(MessageTypeBlocks, buf.Bytes())
+	peer, ok := s.peerMap[from]
+	if !ok {
+		return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
+	}
+
+	// 广播到全网
+	return peer.Send(msg.Bytes())
 }
 
 // 添加区块到链
@@ -231,54 +245,61 @@ func (s *Server) processBlocksMessage(from net.Addr, data *BlocksMessage) error 
 	return nil
 }
 
-// func (s *Server) processStatusMessage(from NetAddr, data *StatusMessage) error {
-// 	if data.CurrentHeight > s.chain.Height() {
-// 		s.Logger.Log("msg", "cannot sync blockHeight to low", "ourHeight", s.chain.Height(), "theirHeight", data.CurrentHeight, "addr", from)
-// 		return nil
-// 	}
+func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error {
+	s.Logger.Log("msg", "received STATUS message", "from", from)
 
-// 	getBlocksMessage := &GetBlocksMessage{
-// 		From: s.chain.Height(),
-// 		To:   0,
-// 	}
+	if data.CurrentHeight > s.chain.Height() {
+		s.Logger.Log("msg", "cannot sync blockHeight to low", "ourHeight", s.chain.Height(), "theirHeight", data.CurrentHeight, "addr", from)
+		return nil
+	}
 
-// 	buf := new(bytes.Buffer)
-// 	if err := gob.NewEncoder(buf).Encode(getBlocksMessage); err != nil {
-// 		return err
-// 	}
+	getBlocksMessage := &GetBlocksMessage{
+		From: s.chain.Height(),
+		To:   0,
+	}
 
-// 	msg := NewMessage(MessageTypeGetBlocks, buf.Bytes())
-// 	return s.Transport.SendMessage(from, msg.Bytes())
-// }
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(getBlocksMessage); err != nil {
+		return err
+	}
 
-// TODO
-// func (s *Server) processGetStatusMessage(from NetAddr, data *GetStatusMessage) error {
-// 	s.Logger.Log("msg", "received getStatus message", "from", from)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
-// 	statusMessage := &StatusMessage{
-// 		CurrentHeight: s.chain.Height(),
-// 		ID:            s.ID,
-// 	}
+	peer, ok := s.peerMap[from]
+	if !ok {
+		return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
+	}
 
-// 	buf := new(bytes.Buffer)
-// 	if err := gob.NewEncoder(buf).Encode(statusMessage); err != nil {
-// 		return err
-// 	}
+	msg := NewMessage(MessageTypeGetBlocks, buf.Bytes())
+	return peer.Send(msg.Bytes())
+}
 
-// 	// s.mu.RLock()
-// 	// defer s.mu.RUnlock()
+func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) error {
+	s.Logger.Log("msg", "received getStatus message", "from", from)
 
-// 	// peer, ok := s.peerMap[from]
-// 	// if !ok {
-// 	// 	return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
-// 	// }
+	statusMessage := &StatusMessage{
+		CurrentHeight: s.chain.Height(),
+		ID:            s.ID,
+	}
 
-// 	msg := NewMessage(MessageTypeStatus, buf.Bytes())
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(statusMessage); err != nil {
+		return err
+	}
 
-// 	return s.Transport.SendMessage(from, msg.Bytes())
-// 	// return peer.Send(msg.Bytes())
-// 	// return nil
-// }
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	peer, ok := s.peerMap[from]
+	if !ok {
+		return fmt.Errorf("peer %s not known", peer.conn.RemoteAddr())
+	}
+
+	msg := NewMessage(MessageTypeStatus, buf.Bytes())
+
+	return peer.Send(msg.Bytes())
+}
 
 func (s *Server) processBlock(b *core.Block) error {
 	if err := s.chain.AddBlock(b); err != nil {
@@ -313,7 +334,7 @@ func (s *Server) processTransaction(tx *core.Transaction) error {
 }
 
 // 节点之间同步高度
-func (s *Server) sendGetStatusMessage(tr Transport) error {
+func (s *Server) sendGetStatusMessage(peer *TCPPeer) error {
 	var (
 		/*
 			ID            string
@@ -328,18 +349,14 @@ func (s *Server) sendGetStatusMessage(tr Transport) error {
 	}
 
 	// 节点之间同步 message
-	// msg := NewMessage(MessageTypeGetStatus, buf.Bytes())
-	// if err := s.Transport.SendMessage(tr.Addr(), msg.Bytes()); err != nil {
-	// 	return err
-	// }
-
-	return nil
+	msg := NewMessage(MessageTypeGetStatus, buf.Bytes())
+	return peer.Send(msg.Bytes())
 }
 
 // 广播 message	 到所有节点
 func (s *Server) broadcast(payload []byte) error {
-	// s.mu.RLock()
-	// defer s.mu.RUnlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	for netAddr, peer := range s.peerMap {
 		if err := peer.Send(payload); err != nil {
