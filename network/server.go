@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"project-bee/api"
 	"project-bee/core"
 	"project-bee/crypto"
 	"project-bee/types"
@@ -19,6 +20,7 @@ import (
 var defaultBlockTime = 5 * time.Second
 
 type ServerOpts struct {
+	APIListener   string
 	SeedNodes     []string
 	ListenAddr    string
 	TCPTransport  *TCPTransport
@@ -44,6 +46,7 @@ type Server struct {
 	isValidator bool
 	rpcCh       chan RPC
 	quitCh      chan struct{}
+	txChan      chan *core.Transaction
 }
 
 func NewServer(opts ServerOpts) (*Server, error) {
@@ -65,8 +68,24 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		return nil, err
 	}
 
+	// api
+	txChan := make(chan *core.Transaction)
+
+	if len(opts.APIListener) > 0 {
+		apiServerCfg := api.ServerConfig{
+			Logger:     opts.Logger,
+			ListenAddr: opts.APIListener,
+		}
+
+		apiServer := api.NewServer(apiServerCfg, chain, txChan)
+
+		go apiServer.Start()
+		opts.Logger.Log("msg", "JSON API server running", "port:", opts.APIListener)
+	}
+
 	peerCh := make(chan *TCPPeer)
 	tr := NewTCPTransport(opts.ListenAddr, peerCh)
+
 	s := &Server{
 		TCPTransport: tr,
 		peerCh:       peerCh,
@@ -77,6 +96,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		isValidator:  opts.PrivateKey != nil,
 		rpcCh:        make(chan RPC),
 		quitCh:       make(chan struct{}, 1),
+		txChan:       txChan,
 	}
 
 	s.TCPTransport.peerCh = peerCh
@@ -119,12 +139,10 @@ func (s *Server) Start() {
 	s.bootsrapNetwork()
 
 	s.Logger.Log("msg", "accepting TCP connection on", "addr", s.ListenAddr, "id", s.ID)
-
 free:
 	for {
 		select {
 		case peer := <-s.peerCh:
-
 			s.peerMap[peer.conn.RemoteAddr()] = peer
 
 			go peer.readLoop(s.rpcCh)
@@ -134,20 +152,22 @@ free:
 				continue
 			}
 			s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
+		case tx := <-s.txChan: // 获取 postTx
+			if err := s.processTransaction(tx); err != nil {
+				s.Logger.Log("process TX error", err)
+			}
 		case rpc := <-s.rpcCh:
 			msg, err := s.RPCDecodeFunc(rpc)
 			if err != nil {
-				s.Logger.Log("error", err)
+				s.Logger.Log("RPC error", err)
 				continue
 			}
-
 			if err := s.RPCProcessor.ProcessMessage(msg); err != nil {
 				// 过滤掉 已经同步的 err
 				if err != core.ErrBlockKnown {
 					s.Logger.Log("error", err)
 				}
 			}
-
 		case <-s.quitCh:
 			break free
 			// case <-ticker.C:
@@ -179,7 +199,7 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 	case *core.Block:
 		return s.processBlock(t)
 	case *GetStatusMessage:
-		return s.processGetStatusMessage(msg.From, t)
+		return s.processGetStatusMessage(msg.From)
 	case *StatusMessage:
 		return s.processStatusMessage(msg.From, t)
 	case *GetBlocksMessage:
@@ -192,7 +212,7 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 }
 
 func (s *Server) processGetBlocksMessage(from net.Addr, data *GetBlocksMessage) error {
-	s.Logger.Log("msg", "received getBlocks message", "from", from)
+	// s.Logger.Log("msg", "received getBlocks message", "from", from)
 
 	var (
 		blocks    = []*core.Block{}
@@ -234,7 +254,7 @@ func (s *Server) processGetBlocksMessage(from net.Addr, data *GetBlocksMessage) 
 
 // 添加区块到链
 func (s *Server) processBlocksMessage(from net.Addr, data *BlocksMessage) error {
-	s.Logger.Log("msg", "received BLOCKS!!!!!!!!", "from", from)
+	// s.Logger.Log("msg", "received BLOCKS!!!!!!!!", "from", from)
 
 	for _, block := range data.Blocks {
 		if err := s.chain.AddBlock(block); err != nil {
@@ -258,7 +278,7 @@ func (s *Server) processStatusMessage(from net.Addr, data *StatusMessage) error 
 	return nil
 }
 
-func (s *Server) processGetStatusMessage(from net.Addr, data *GetStatusMessage) error {
+func (s *Server) processGetStatusMessage(from net.Addr) error {
 	s.Logger.Log("msg", "received getStatus message", "from", from)
 
 	statusMessage := &StatusMessage{
@@ -349,14 +369,14 @@ func (s *Server) broadcast(payload []byte) error {
 	}
 	return nil
 }
- 
+
 func (s *Server) requestBlocksLoop(peer net.Addr) error {
 	ticker := time.NewTicker(3 * time.Second)
 
 	for {
 		ourHeight := s.chain.Height()
 
-		s.Logger.Log("msg", "requesting new blocks", "requesting height", ourHeight+1)
+		// s.Logger.Log("msg", "requesting new blocks", "requesting height", ourHeight+1)
 
 		getBlocksMessage := &GetBlocksMessage{
 			From: ourHeight + 1,

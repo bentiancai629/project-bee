@@ -28,6 +28,10 @@ func (h Hash) ToSlice() []byte {
 func (h Hash) ToHexString() string {
 	return hex.EncodeToString(h[:])
 }
+
+func (h Hash) String() string {
+	return hex.EncodeToString(h.ToSlice())
+}
 func HashFromBytes(b []byte) Hash {
 	if len(b) != 32 {
 		msg := fmt.Sprintf("given bytes with length %d should be 32", len(b))

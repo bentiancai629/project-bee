@@ -4,17 +4,28 @@ import (
 	"fmt"
 	"sync"
 
+	"project-bee/types"
+
 	"github.com/go-kit/log"
 )
 
 type Blockchain struct {
-	logger    log.Logger
-	store     Storage
-	lock      sync.RWMutex
-	headers   []*Header
-	blocks    []*Block
+	logger log.Logger
+	store  Storage
+	// TODO: double check this!
+	lock       sync.RWMutex
+	headers    []*Header
+	blocks     []*Block
+	txStore    map[types.Hash]*Transaction
+	blockStore map[types.Hash]*Block
+
+	// accountState *AccountState
+
+	stateLock sync.RWMutex
+
 	validator Validator
 
+	// TODO: make this an interface.
 	contractState *State
 }
 
@@ -26,6 +37,9 @@ func NewBlockchain(l log.Logger, genesis *Block) (*Blockchain, error) {
 		headers:       []*Header{},
 		store:         NewMemorystore(),
 		logger:        l,
+
+		blockStore: make(map[types.Hash]*Block),
+		txStore:    make(map[types.Hash]*Transaction),
 	}
 	bc.validator = NewBlockchainValidator(bc)
 
@@ -59,17 +73,18 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 
 	return bc.addBlockWithoutValidation(b)
 }
-// func (bc *Blockchain) GetBlockByHash(hash types.Hash) (*Block, error) {
-// 	bc.lock.Lock()
-// 	defer bc.lock.Unlock()
 
-// 	block, ok := bc.blockStore[hash]
-// 	if !ok {
-// 		return nil, fmt.Errorf("block with hash (%s) not found", hash)
-// 	}
+func (bc *Blockchain) GetBlockByHash(hash types.Hash) (*Block, error) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
 
-// 	return block, nil
-// }
+	block, ok := bc.blockStore[hash]
+	if !ok {
+		return nil, fmt.Errorf("block with hash (%s) not found", hash)
+	}
+
+	return block, nil
+}
 
 func (bc *Blockchain) GetBlock(height uint32) (*Block, error) {
 	if height > bc.Height() {
@@ -93,8 +108,20 @@ func (bc *Blockchain) GetHeader(height uint32) (*Header, error) {
 	return bc.headers[height], nil
 }
 
-func (bc *Blockchain) HasBlock(height uint32) bool {
+func (bc *Blockchain) GetTxByHash(hash types.Hash) (*Transaction, error) {
+	bc.lock.Lock()
+	defer bc.lock.Unlock()
 
+	fmt.Println("len:", len(bc.txStore))
+	tx, ok := bc.txStore[hash]
+	if !ok {
+		return nil, fmt.Errorf("could not find tx with hash (%s)", hash)
+	}
+
+	return tx, nil
+}
+
+func (bc *Blockchain) HasBlock(height uint32) bool {
 	return height <= bc.Height()
 }
 
@@ -105,7 +132,50 @@ func (bc *Blockchain) Height() uint32 {
 	return uint32(len(bc.headers) - 1)
 }
 
+func (bc *Blockchain) handleTransaction(tx *Transaction) error {
+	// If we have data inside execute that data on the VM.
+	if len(tx.Data) > 0 {
+		bc.logger.Log("msg", "executing code", "len", len(tx.Data), "hash", tx.Hash(&TxHasher{}))
+
+		vm := NewVM(tx.Data, bc.contractState)
+		if err := vm.Run(); err != nil {
+			return err
+		}
+	}
+
+	// If the txInner of the transaction is not nil we need to handle
+	// the native NFT implemtation.
+	// if tx.TxInner != nil {
+	// 	if err := bc.handleNativeNFT(tx); err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	// // Handle the native transaction here
+	// if tx.Value > 0 {
+	// 	if err := bc.handleNativeTransfer(tx); err != nil {
+	// 		return err
+	// 	}
+	// }
+	return nil
+}
+
 func (bc *Blockchain) addBlockWithoutValidation(b *Block) error {
+
+	bc.stateLock.Lock()
+	for i := 0; i < len(b.Transactions); i++ {
+		if err := bc.handleTransaction(b.Transactions[i]); err != nil {
+			bc.logger.Log("error", err.Error())
+
+			b.Transactions[i] = b.Transactions[len(b.Transactions)-1]
+			b.Transactions = b.Transactions[:len(b.Transactions)-1]
+
+			continue
+		}
+	}
+
+	bc.stateLock.Unlock()
+
 	bc.lock.Lock()
 	bc.headers = append(bc.headers, b.Header)
 	bc.blocks = append(bc.blocks, b)

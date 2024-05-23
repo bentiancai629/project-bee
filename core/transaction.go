@@ -2,16 +2,20 @@ package core
 
 import (
 	"fmt"
+	"math/rand"
 
 	"project-bee/crypto"
 	"project-bee/types"
 )
 
 type Transaction struct {
+	TxInner any
 	Data []byte
-
+	To        crypto.PublicKey
+	Value     uint64
 	From      crypto.PublicKey
 	Signature *crypto.Signature
+	Nonce     int64
 
 	// cached version of the tx data hash
 	hash types.Hash
@@ -23,6 +27,7 @@ type Transaction struct {
 func NewTransaction(data []byte) *Transaction {
 	return &Transaction{
 		Data: data,
+		Nonce: rand.Int63n(1000000000000000),
 	}
 }
 
