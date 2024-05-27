@@ -5,9 +5,10 @@ import (
 
 	"project-bee/types"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/assert"
 )
+ 
 
 func TestAddBlock(t *testing.T) {
 	bc := newBlockchainWithGenesis(t)
@@ -73,7 +74,7 @@ func TestAddBlockToHigh(t *testing.T) {
 func newBlockchainWithGenesis(t *testing.T) *Blockchain {
 	logger := log.NewNopLogger()
 
-	bc, err := NewBlockchain(logger,randomBlock(t, 0, types.Hash{}))
+	bc, err := NewBlockchain(logger, randomBlock(t, 0, types.Hash{}))
 	assert.Nil(t, err)
 
 	return bc

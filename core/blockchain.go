@@ -21,7 +21,9 @@ type Blockchain struct {
 
 	// accountState *AccountState
 
-	stateLock sync.RWMutex
+	stateLock       sync.RWMutex
+	collectionState map[types.Hash]*CollectionTx
+	mintState       map[types.Hash]*MintTx
 
 	validator Validator
 
@@ -33,13 +35,14 @@ func NewBlockchain(l log.Logger, genesis *Block) (*Blockchain, error) {
 
 	bc := &Blockchain{
 		// 合约状态存储
-		contractState: NewState(),
-		headers:       []*Header{},
-		store:         NewMemorystore(),
-		logger:        l,
-
-		blockStore: make(map[types.Hash]*Block),
-		txStore:    make(map[types.Hash]*Transaction),
+		contractState:   NewState(),
+		headers:         []*Header{},
+		store:           NewMemorystore(),
+		logger:          l,
+		collectionState: make(map[types.Hash]*CollectionTx),
+		mintState:       make(map[types.Hash]*MintTx),
+		blockStore:      make(map[types.Hash]*Block),
+		txStore:         make(map[types.Hash]*Transaction),
 	}
 	bc.validator = NewBlockchainValidator(bc)
 
@@ -56,19 +59,39 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 		return err
 	}
 
+	bc.stateLock.Lock()
+	defer bc.stateLock.Unlock()
+
 	// 执行合约内的交易
 	for _, tx := range b.Transactions {
 		bc.logger.Log("msg", "executing code", "len", len(tx.Data), "hash", tx.Hash(&TxHasher{}).ToHexString())
 
-		vm := NewVM(tx.Data, bc.contractState)
-		if err := vm.Run(); err != nil {
-			return err
+		if len(tx.Data) > 0 {
+			vm := NewVM(tx.Data, bc.contractState)
+			if err := vm.Run(); err != nil {
+				return err
+			}
+
+			// result := vm.stack.Pop()
+			// bc.logger.Log("vm result: ", result)
+			// fmt.Printf("STATE: %+v\n", vm.contractState)
 		}
 
-		result := vm.stack.Pop()
-		bc.logger.Log("vm result: ", result)
+		hash := tx.Hash(TxHasher{})
+		switch t := tx.TxInner.(type) {
+		case CollectionTx:
+			bc.collectionState[hash] = &t
+			bc.logger.Log("msg", "create a new NFT collection", "hash", hash)
+		case MintTx:
+			_, ok := bc.collectionState[t.Collection]
+			if !ok {
+				return fmt.Errorf("collection (%s) does not exist on the blockchain", t.Collection)
+			}
+			bc.mintState[hash] = &t
+		default:
+			fmt.Printf("unsupported tx type: %v", t)
+		}
 
-		// fmt.Printf("STATE: %+v\n", vm.contractState)
 	}
 
 	return bc.addBlockWithoutValidation(b)

@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/gob"
-
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -11,12 +11,14 @@ import (
 	"project-bee/core"
 	"project-bee/crypto"
 	"project-bee/network"
+	"project-bee/types"
+	"project-bee/util"
 )
 
 func main() {
-	privKey := crypto.GeneratePrivateKey()
+	validatorPrivKey := crypto.GeneratePrivateKey()
 
-	localNode := makeServer("LOCAL_NODE", &privKey, ":3000", []string{":4000"}, ":9000")
+	localNode := makeServer("LOCAL_NODE", &validatorPrivKey, ":3000", []string{":4000"}, ":9000")
 	go localNode.Start()
 
 	remoteNode := makeServer("REMOTE_NODE", nil, ":4000", []string{":5000"}, "")
@@ -33,14 +35,16 @@ func main() {
 	}()
 
 	time.Sleep(1 * time.Second)
-
 	txSenderTicker := time.NewTicker(1 * time.Second)
+
+	collectionOwnerPrivKey := crypto.GeneratePrivateKey()
+	collectionHash := createCollectionTx(collectionOwnerPrivKey)
+
 	go func() {
-		for {
-			select {
-			case <-txSenderTicker.C:
-				txSender()
-			}
+		for i := 0; i < 20; i++ {
+			nftMinter(collectionOwnerPrivKey, collectionHash)
+
+			<-txSenderTicker.C
 		}
 	}()
 
@@ -65,28 +69,59 @@ func makeServer(id string, pk *crypto.PrivateKey, addr string, seedNodes []strin
 	return s
 }
 
-func txSender() {
-	// conn, err := net.Dial("tcp", ":3000")
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	privKey := crypto.GeneratePrivateKey()
-
-	// data := []byte("Hello BTC!")
-	data := []byte{0x03, 0x0a, 0x46, 0x0c, 0x4f, 0x0c, 0x4f, 0x0c, 0x0d, 0x05, 0x0a, 0x0f}
-	tx := core.NewTransaction(data)
+func createCollectionTx(privKey crypto.PrivateKey) types.Hash {
+	tx := core.NewTransaction(nil)
+	tx.TxInner = core.CollectionTx{
+		Fee:      200,
+		MetaData: []byte("chicken and egg collection!"),
+	}
 	tx.Sign(privKey)
+
 	buf := &bytes.Buffer{}
 	if err := tx.Encode(core.NewGobTxEncoder(buf)); err != nil {
 		panic(err)
 	}
-	// msg := network.NewMessage(network.MessageTypeTx, buf.Bytes())
 
-	// _, err = conn.Write(msg.Bytes())
-	// if err != nil {
-	// 	panic(err)
-	// }
+	req, err := http.NewRequest("POST", "http://localhost:9000/tx", buf)
+	if err != nil {
+		panic(err)
+	}
+
+	client := http.Client{}
+	_, err = client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+
+	return tx.Hash(core.TxHasher{})
+}
+
+func nftMinter(privKey crypto.PrivateKey, collection types.Hash) {
+	metaData := map[string]any{
+		"power":  8,
+		"health": 100,
+		"color":  "green",
+		"rare":   "yes",
+	}
+
+	metaBuf := new(bytes.Buffer)
+	if err := json.NewEncoder(metaBuf).Encode(metaData); err != nil {
+		panic(err)
+	}
+	tx := core.NewTransaction(nil)
+	tx.TxInner = core.MintTx{
+		Fee:             200,
+		NFT:             util.RandomHash(),
+		MetaData:        metaBuf.Bytes(),
+		Collection:      collection,
+		CollectionOwner: privKey.PublicKey(),
+	}
+	tx.Sign(privKey)
+
+	buf := &bytes.Buffer{}
+	if err := tx.Encode(core.NewGobTxEncoder(buf)); err != nil {
+		panic(err)
+	}
 
 	req, err := http.NewRequest("POST", "http://localhost:9000/tx", buf)
 	if err != nil {
@@ -99,87 +134,3 @@ func txSender() {
 		panic(err)
 	}
 }
-
-// var transports = []network.Transport{
-// 	network.NewLocalTransport("LOCAL"),
-// 	// network.NewLocalTransport("REMOTE_A"),
-// 	// network.NewLocalTransport("REMOTE_B"),
-// 	// network.NewLocalTransport("REMOTE_C"),
-// }
-
-// func main1() {
-
-// 	// node A/B/C
-// 	initRemoteServers(transports)
-
-// 	localNode := transports[0]
-// 	trLate := network.NewLocalTransport("LATE_REMOTE")
-// 	// remoteNodeA := transports[1]
-// 	// remoteNodeC := transports[3]
-
-// 	// go func() {
-// 	// 	for {
-// 	// 		if err := sendTransaction(remoteNodeA, localNode.Addr()); err != nil {
-// 	// 			logrus.Error(err)
-// 	// 		}
-// 	// 		time.Sleep(2 * time.Second)
-// 	// 	}
-// 	// }()
-
-// 	// node Late
-// 	go func() {
-// 		time.Sleep(7 * time.Second)
-// 		lateServer := makeServer(string(trLate.Addr()), trLate, nil)
-// 		go lateServer.Start()
-// 	}()
-
-// 	privKey := crypto.GeneratePrivateKey()
-// 	localServer := makeServer("LOCAL", localNode, &privKey)
-// 	localServer.Start()
-// }
-
-// func initRemoteServers(trs []network.Transport) {
-// 	for i := 0; i < len(trs); i++ {
-// 		id := fmt.Sprintf("REMOTE_%d", i)
-// 		s := makeServer(id, trs[i], nil)
-// 		go s.Start()
-// 	}
-// }
-
-func sendGetStatusMessage(tr network.Transport, to network.NetAddr) error {
-	var (
-		/*
-			ID            string
-			Version       uint32
-			CurrentHeight uint32
-		*/
-		getStatusMsg = new(network.GetStatusMessage)
-		buf          = new(bytes.Buffer)
-	)
-	if err := gob.NewEncoder(buf).Encode(getStatusMsg); err != nil {
-		return err
-	}
-
-	// 节点之间同步 message
-	msg := network.NewMessage(network.MessageTypeGetStatus, buf.Bytes())
-	return tr.SendMessage(tr.Addr(), msg.Bytes())
-
-}
-
-// func sendTransaction(tr network.Transport, to network.NetAddr) error {
-// 	privKey := crypto.GeneratePrivateKey()
-// 	// data := []byte(strconv.FormatInt(int64(rand.Intn(1000000000)), 10))
-// 	// data := []byte{0x03, 0x0a, 0x46, 0x0c, 0x4f, 0x0c, 0x4f, 0x0c, 0x0d, 0x05, 0x0a, 0x0f}
-// 	// contract := []byte{0x03, 0x0a, 0x46, 0x0c, 0x4f, 0x0c, 0x4f, 0x0c, 0x0d, 0x05, 0x0a, 0x0f}
-// 	data := []byte{0x03, 0x0a}
-// 	tx := core.NewTransaction(data)
-// 	tx.Sign(privKey)
-// 	buf := &bytes.Buffer{}
-// 	if err := tx.Encode(core.NewGobTxEncoder(buf)); err != nil {
-// 		return err
-// 	}
-
-// 	msg := network.NewMessage(network.MessageTypeTx, buf.Bytes())
-
-// 	return tr.SendMessage(to, msg.Bytes())
-// }

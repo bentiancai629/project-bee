@@ -1,6 +1,7 @@
 package core
 
-import (
+import ( 
+	"encoding/gob"
 	"bytes"
 	"testing"
 
@@ -9,6 +10,29 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestNFTTransaction(t *testing.T) {
+	collectionTx := CollectionTx{
+		Fee:      200,
+		MetaData: []byte("The beginning of a new collection"),
+	}
+
+	privkey := crypto.GeneratePrivateKey()
+
+	tx := &Transaction{
+		Type:    TxTypeCollection,
+		TxInner: collectionTx,
+	}
+
+	tx.Sign(privkey)
+
+	buf := new(bytes.Buffer)
+	assert.Nil(t, gob.NewEncoder(buf).Encode(tx))
+
+	txDecoded := &Transaction{}
+	assert.Nil(t, gob.NewDecoder(buf).Decode(txDecoded))
+	assert.Equal(t, tx, txDecoded)
+
+}
 func TestSignTransaction(t *testing.T) {
 	privKey := crypto.GeneratePrivateKey()
 	tx := &Transaction{
