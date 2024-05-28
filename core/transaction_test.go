@@ -19,7 +19,6 @@ func TestNFTTransaction(t *testing.T) {
 	privkey := crypto.GeneratePrivateKey()
 
 	tx := &Transaction{
-		Type:    TxTypeCollection,
 		TxInner: collectionTx,
 	}
 
@@ -31,8 +30,20 @@ func TestNFTTransaction(t *testing.T) {
 	txDecoded := &Transaction{}
 	assert.Nil(t, gob.NewDecoder(buf).Decode(txDecoded))
 	assert.Equal(t, tx, txDecoded)
-
 }
+
+func TestNativeTransaction(t *testing.T) {
+	fromPrivkey := crypto.GeneratePrivateKey()
+	toPrivkey := crypto.GeneratePrivateKey()
+	
+	tx := &Transaction{
+		To:   toPrivkey.PublicKey(),
+		Value: 666,
+	}
+	
+	assert.Nil(t, tx.Sign(fromPrivkey))
+}
+
 func TestSignTransaction(t *testing.T) {
 	privKey := crypto.GeneratePrivateKey()
 	tx := &Transaction{

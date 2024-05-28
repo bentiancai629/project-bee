@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"project-bee/crypto"
 	"project-bee/types"
 
 	"github.com/go-kit/log"
@@ -19,7 +20,7 @@ type Blockchain struct {
 	txStore    map[types.Hash]*Transaction
 	blockStore map[types.Hash]*Block
 
-	// accountState *AccountState
+	accountState *AccountState
 
 	stateLock       sync.RWMutex
 	collectionState map[types.Hash]*CollectionTx
@@ -32,6 +33,11 @@ type Blockchain struct {
 }
 
 func NewBlockchain(l log.Logger, genesis *Block) (*Blockchain, error) {
+	// TODO: read this from disk later on
+	accountState := NewAccountState()
+
+	coinbase := crypto.PublicKey{}
+	accountState.CreateAccount(coinbase.Address())
 
 	bc := &Blockchain{
 		// 合约状态存储
@@ -39,6 +45,7 @@ func NewBlockchain(l log.Logger, genesis *Block) (*Blockchain, error) {
 		headers:         []*Header{},
 		store:           NewMemorystore(),
 		logger:          l,
+		accountState:    accountState,
 		collectionState: make(map[types.Hash]*CollectionTx),
 		mintState:       make(map[types.Hash]*MintTx),
 		blockStore:      make(map[types.Hash]*Block),
@@ -59,44 +66,38 @@ func (bc *Blockchain) AddBlock(b *Block) error {
 		return err
 	}
 
-	bc.stateLock.Lock()
-	defer bc.stateLock.Unlock()
-
-	// 执行合约内的交易
-	for _, tx := range b.Transactions {
-		bc.logger.Log("msg", "executing code", "len", len(tx.Data), "hash", tx.Hash(&TxHasher{}).ToHexString())
-
-		if len(tx.Data) > 0 {
-			vm := NewVM(tx.Data, bc.contractState)
-			if err := vm.Run(); err != nil {
-				return err
-			}
-
-			// result := vm.stack.Pop()
-			// bc.logger.Log("vm result: ", result)
-			// fmt.Printf("STATE: %+v\n", vm.contractState)
-		}
-
-		hash := tx.Hash(TxHasher{})
-		switch t := tx.TxInner.(type) {
-		case CollectionTx:
-			bc.collectionState[hash] = &t
-			bc.logger.Log("msg", "create a new NFT collection", "hash", hash)
-		case MintTx:
-			_, ok := bc.collectionState[t.Collection]
-			if !ok {
-				return fmt.Errorf("collection (%s) does not exist on the blockchain", t.Collection)
-			}
-			bc.mintState[hash] = &t
-		default:
-			fmt.Printf("unsupported tx type: %v", t)
-		}
-
-	}
-
 	return bc.addBlockWithoutValidation(b)
 }
 
+func (bc *Blockchain) handleNativeTransfer(tx *Transaction) error {
+	bc.logger.Log(
+		"msg", "handle native token transfer",
+		"from", tx.From,
+		"to", tx.To,
+		"value", tx.Value)
+
+	return bc.accountState.Transfer(tx.From.Address(), tx.To.Address(), tx.Value)
+}
+
+func (bc *Blockchain) handleNativeNFT(tx *Transaction) error {
+	hash := tx.Hash(TxHasher{})
+	switch t := tx.TxInner.(type) {
+	case CollectionTx:
+		bc.collectionState[hash] = &t
+		bc.logger.Log("msg", "create a new NFT collection", "hash", hash)
+	case MintTx:
+		_, ok := bc.collectionState[t.Collection]
+		if !ok {
+			return fmt.Errorf("collection (%s) does not exist on the blockchain", t.Collection)
+		}
+		bc.mintState[hash] = &t
+
+		bc.logger.Log("msg", "created new NFT mint", "NFT", t.NFT, "collection", t.Collection)
+	default:
+		fmt.Printf("unsupported tx type: %v", t)
+	}
+	return nil
+}
 func (bc *Blockchain) GetBlockByHash(hash types.Hash) (*Block, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
@@ -166,25 +167,22 @@ func (bc *Blockchain) handleTransaction(tx *Transaction) error {
 		}
 	}
 
-	// If the txInner of the transaction is not nil we need to handle
-	// the native NFT implemtation.
-	// if tx.TxInner != nil {
-	// 	if err := bc.handleNativeNFT(tx); err != nil {
-	// 		return err
-	// 	}
-	// }
+	if tx.TxInner != nil {
+		if err := bc.handleNativeNFT(tx); err != nil {
+			return err
+		}
+	}
 
-	// // Handle the native transaction here
-	// if tx.Value > 0 {
-	// 	if err := bc.handleNativeTransfer(tx); err != nil {
-	// 		return err
-	// 	}
-	// }
+	// Handle the native transaction here
+	if tx.Value > 0 {
+		if err := bc.handleNativeTransfer(tx); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (bc *Blockchain) addBlockWithoutValidation(b *Block) error {
-
 	bc.stateLock.Lock()
 	for i := 0; i < len(b.Transactions); i++ {
 		if err := bc.handleTransaction(b.Transactions[i]); err != nil {
@@ -199,9 +197,18 @@ func (bc *Blockchain) addBlockWithoutValidation(b *Block) error {
 
 	bc.stateLock.Unlock()
 
+	fmt.Println("========ACCOUNT STATE==============")
+	fmt.Printf("%+v\n", bc.accountState.accounts)
+	fmt.Println("========ACCOUNT STATE==============")
+
 	bc.lock.Lock()
 	bc.headers = append(bc.headers, b.Header)
 	bc.blocks = append(bc.blocks, b)
+	bc.blockStore[b.Hash(BlockHasher{})] = b
+
+	for _, tx := range b.Transactions {
+		bc.txStore[tx.Hash(TxHasher{})] = tx
+	}
 	bc.lock.Unlock()
 
 	bc.logger.Log(

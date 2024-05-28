@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"encoding/gob"
+	// "encoding/gob"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -35,23 +35,51 @@ func main() {
 	}()
 
 	time.Sleep(1 * time.Second)
-	txSenderTicker := time.NewTicker(1 * time.Second)
 
-	collectionOwnerPrivKey := crypto.GeneratePrivateKey()
-	collectionHash := createCollectionTx(collectionOwnerPrivKey)
+	// if err := sendTransaction(validatorPrivKey); err != nil {
+	// 	panic(err)
+	// }
 
-	go func() {
-		for i := 0; i < 20; i++ {
-			nftMinter(collectionOwnerPrivKey, collectionHash)
+	// collectionOwnerPrivKey := crypto.GeneratePrivateKey()
+	// collectionHash := createCollectionTx(collectionOwnerPrivKey)
 
-			<-txSenderTicker.C
-		}
-	}()
+	// txSenderTicker := time.NewTicker(1 * time.Second)
+	// go func() {
+	// 	for i := 0; i < 20; i++ {
+	// 		nftMinter(collectionOwnerPrivKey, collectionHash)
+
+	// 		<-txSenderTicker.C
+	// 	}
+	// }()
 
 	select {}
-
 }
 
+func sendTransaction(privKey crypto.PrivateKey) error {
+	toPrivKey := crypto.GeneratePrivateKey()
+
+	tx := core.NewTransaction(nil)
+	tx.To = toPrivKey.PublicKey()
+	tx.Value = 666
+	if err := tx.Sign(privKey); err != nil {
+		return err
+	}
+
+	buf := &bytes.Buffer{}
+	if err := tx.Encode(core.NewGobTxEncoder(buf)); err != nil {
+		panic(err)
+	}
+
+	req, err := http.NewRequest("POST", "http://localhost:9000/tx", buf)
+	if err != nil {
+		panic(err)
+	}
+
+	client := http.Client{}
+	_, err = client.Do(req)
+
+	return err
+}
 func makeServer(id string, pk *crypto.PrivateKey, addr string, seedNodes []string, apiListenAddr string) *network.Server {
 	opts := network.ServerOpts{
 		APIListener: apiListenAddr,

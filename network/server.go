@@ -111,12 +111,10 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	}
 
 	return s, nil
-
 }
 
 func (s *Server) bootsrapNetwork() {
 	for _, addr := range s.SeedNodes {
-		fmt.Println("trying to connect to ", addr)
 		go func(addr string) {
 			conn, err := net.Dial("tcp", addr)
 			if err != nil {
@@ -134,6 +132,7 @@ func (s *Server) Start() {
 
 	// 并发启动监听
 	s.TCPTransport.Start()
+
 	time.Sleep(1 * time.Second)
 
 	s.bootsrapNetwork()
@@ -152,7 +151,7 @@ free:
 				continue
 			}
 			s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
-		case tx := <-s.txChan: // 获取 postTx
+		case tx := <-s.txChan: // 获取 Tx from API_POST /tx
 			if err := s.processTransaction(tx); err != nil {
 				s.Logger.Log("process TX error", err)
 			}
@@ -170,10 +169,6 @@ free:
 			}
 		case <-s.quitCh:
 			break free
-			// case <-ticker.C:
-			// 	if s.isValidator {
-			// 		s.createNewBlock()
-			// 	}
 		}
 	}
 
@@ -186,8 +181,12 @@ func (s *Server) validatorLoop() {
 	s.Logger.Log("msg", "Starting validator loop", "blockTime", s.BlockTime)
 
 	for {
+		fmt.Println("creating new block")
+		if err := s.createNewBlock(); err != nil {
+			s.Logger.Log("create block error", err)
+		}
+
 		<-ticker.C
-		s.createNewBlock()
 	}
 }
 
@@ -469,9 +468,18 @@ func genesisBlock() *core.Block {
 
 	b, _ := core.NewBlock(header, nil)
 
+	coinbase := crypto.PublicKey{}
+	tx := core.NewTransaction(nil)
+	tx.From = coinbase
+	tx.To = coinbase
+	tx.Value = 10_000_000
+
+	b.Transactions = append(b.Transactions, tx)
+
 	privKey := crypto.GeneratePrivateKey()
 	if err := b.Sign(privKey); err != nil {
 		panic(err)
 	}
+
 	return b
 }

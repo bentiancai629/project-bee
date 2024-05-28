@@ -32,7 +32,6 @@ type MintTx struct {
 }
 
 type Transaction struct {
-	Type      TxType
 	TxInner   any
 	Data      []byte
 	To        crypto.PublicKey
