@@ -15,14 +15,14 @@ import (
 func RandomBytes(size int) []byte {
 	token := make([]byte, size)
 	rand.Read(token)
+
 	return token
 }
 
 func RandomHash() types.Hash {
 	return types.HashFromBytes(RandomBytes(32))
 }
-
-// NewRandomTransaction return a new random transaction whithout signature.
+// 随机的 Tx 没有 signature
 func NewRandomTransaction(size int) *core.Transaction {
 	return core.NewTransaction(RandomBytes(size))
 }

@@ -1,14 +1,34 @@
 package core
 
-import ( 
-	"encoding/gob"
+import (
 	"bytes"
+	"encoding/gob"
 	"testing"
 
 	"project-bee/crypto"
+	"project-bee/types"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestVerifyTransactionWithTamper(t *testing.T) {
+	tx := NewTransaction(nil)
+
+	fromPrivKey := crypto.GeneratePrivateKey()
+	toPrivKey := crypto.GeneratePrivateKey()
+	hackerPrivKey := crypto.GeneratePrivateKey()
+
+	tx.From = fromPrivKey.PublicKey()
+	tx.To = toPrivKey.PublicKey()
+	tx.Value = 666
+
+	assert.Nil(t, tx.Sign(fromPrivKey))
+	tx.hash = types.Hash{}
+
+	tx.To = hackerPrivKey.PublicKey()
+
+	assert.NotNil(t, tx.Verify())
+}
 
 func TestNFTTransaction(t *testing.T) {
 	collectionTx := CollectionTx{
@@ -17,12 +37,11 @@ func TestNFTTransaction(t *testing.T) {
 	}
 
 	privkey := crypto.GeneratePrivateKey()
-
 	tx := &Transaction{
 		TxInner: collectionTx,
 	}
-
 	tx.Sign(privkey)
+	tx.hash = types.Hash{}
 
 	buf := new(bytes.Buffer)
 	assert.Nil(t, gob.NewEncoder(buf).Encode(tx))
@@ -35,12 +54,12 @@ func TestNFTTransaction(t *testing.T) {
 func TestNativeTransaction(t *testing.T) {
 	fromPrivkey := crypto.GeneratePrivateKey()
 	toPrivkey := crypto.GeneratePrivateKey()
-	
+
 	tx := &Transaction{
-		To:   toPrivkey.PublicKey(),
+		To:    toPrivkey.PublicKey(),
 		Value: 666,
 	}
-	
+
 	assert.Nil(t, tx.Sign(fromPrivkey))
 }
 
@@ -73,6 +92,7 @@ func TestTxEncodeDecode(t *testing.T) {
 	tx := randomTxWithSignature(t)
 	buf := &bytes.Buffer{}
 	assert.Nil(t, tx.Encode(NewGobTxEncoder(buf)))
+	tx.hash = types.Hash{}
 
 	txDecoded := new(Transaction)
 	assert.Nil(t, txDecoded.Decode(NewGobTxDecoder(buf)))
@@ -84,6 +104,6 @@ func randomTxWithSignature(t *testing.T) Transaction {
 		Data: []byte("foo"),
 	}
 	assert.Nil(t, tx.Sign(privKey))
-	
+
 	return tx
 }

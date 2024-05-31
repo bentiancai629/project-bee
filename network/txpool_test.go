@@ -19,7 +19,7 @@ func TestTxMaxLength(t *testing.T) {
 	p.Add(util.NewRandomTransaction(10))
 	tx := util.NewRandomTransaction(100)
 	p.Add(tx)
-	assert.Equal(t, 5, p.all.Count())
+	assert.Equal(t, 1, p.all.Count())
 	assert.True(t, p.Contains(tx.Hash(core.TxHasher{})))
 }
 

@@ -64,14 +64,17 @@ func (vm *VM) Run() error {
 		if err := vm.Exec(instr); err != nil {
 			return err
 		}
+
 		vm.ip++
 
 		if vm.ip > len(vm.data)-1 {
 			break
 		}
 	}
+
 	return nil
 }
+
 func (vm *VM) Exec(instr Instruction) error {
 	switch instr {
 	case InstrStore:

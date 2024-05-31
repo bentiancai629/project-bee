@@ -28,7 +28,6 @@ type ServerOpts struct {
 	Logger        log.Logger
 	RPCDecodeFunc RPCDecodeFunc
 	RPCProcessor  RPCProcessor
-	Transports    []Transport
 	BlockTime     time.Duration
 	PrivateKey    *crypto.PrivateKey
 }
@@ -69,6 +68,7 @@ func NewServer(opts ServerOpts) (*Server, error) {
 	}
 
 	// api
+	// channel用在 json RPC server 上
 	txChan := make(chan *core.Transaction)
 
 	if len(opts.APIListener) > 0 {
@@ -78,8 +78,8 @@ func NewServer(opts ServerOpts) (*Server, error) {
 		}
 
 		apiServer := api.NewServer(apiServerCfg, chain, txChan)
-
 		go apiServer.Start()
+
 		opts.Logger.Log("msg", "JSON API server running", "port:", opts.APIListener)
 	}
 
@@ -115,6 +115,8 @@ func NewServer(opts ServerOpts) (*Server, error) {
 
 func (s *Server) bootsrapNetwork() {
 	for _, addr := range s.SeedNodes {
+		fmt.Println("trying to connect to ", addr)
+
 		go func(addr string) {
 			conn, err := net.Dial("tcp", addr)
 			if err != nil {
@@ -129,7 +131,6 @@ func (s *Server) bootsrapNetwork() {
 }
 
 func (s *Server) Start() {
-
 	// 并发启动监听
 	s.TCPTransport.Start()
 
@@ -138,6 +139,7 @@ func (s *Server) Start() {
 	s.bootsrapNetwork()
 
 	s.Logger.Log("msg", "accepting TCP connection on", "addr", s.ListenAddr, "id", s.ID)
+
 free:
 	for {
 		select {
@@ -150,23 +152,28 @@ free:
 				s.Logger.Log("msg", "failed to send get status message", "err", err)
 				continue
 			}
+
 			s.Logger.Log("msg", "peer added to the server", "outgoing", peer.Outgoing, "addr", peer.conn.RemoteAddr())
+
 		case tx := <-s.txChan: // 获取 Tx from API_POST /tx
 			if err := s.processTransaction(tx); err != nil {
 				s.Logger.Log("process TX error", err)
 			}
+
 		case rpc := <-s.rpcCh:
 			msg, err := s.RPCDecodeFunc(rpc)
 			if err != nil {
 				s.Logger.Log("RPC error", err)
 				continue
 			}
+
 			if err := s.RPCProcessor.ProcessMessage(msg); err != nil {
 				// 过滤掉 已经同步的 err
 				if err != core.ErrBlockKnown {
 					s.Logger.Log("error", err)
 				}
 			}
+
 		case <-s.quitCh:
 			break free
 		}
@@ -181,7 +188,8 @@ func (s *Server) validatorLoop() {
 	s.Logger.Log("msg", "Starting validator loop", "blockTime", s.BlockTime)
 
 	for {
-		fmt.Println("creating new block")
+		// fmt.Println("creating new block")
+		
 		if err := s.createNewBlock(); err != nil {
 			s.Logger.Log("create block error", err)
 		}
@@ -211,7 +219,7 @@ func (s *Server) ProcessMessage(msg *DecodedMessage) error {
 }
 
 func (s *Server) processGetBlocksMessage(from net.Addr, data *GetBlocksMessage) error {
-	// s.Logger.Log("msg", "received getBlocks message", "from", from)
+	s.Logger.Log("msg", "received getBlocks message", "from", from)
 
 	var (
 		blocks    = []*core.Block{}
@@ -303,38 +311,6 @@ func (s *Server) processGetStatusMessage(from net.Addr) error {
 	return peer.Send(msg.Bytes())
 }
 
-func (s *Server) processBlock(b *core.Block) error {
-	if err := s.chain.AddBlock(b); err != nil {
-		return err
-	}
-
-	go s.broadcastBlock(b)
-
-	return nil
-}
-
-func (s *Server) processTransaction(tx *core.Transaction) error {
-	hash := tx.Hash(core.TxHasher{})
-	if s.mempool.Contains(hash) {
-		return nil
-	}
-
-	if err := tx.Verify(); err != nil {
-		return err
-	}
-
-	// s.Logger.Log(
-	// 	"msg", "adding new tx to mempool",
-	// 	"hash", hash.ToHexString(),
-	// 	"mempoolLength", s.memPool.Len(),
-	// )
-
-	go s.broadcastTx(tx)
-	s.mempool.Add(tx)
-
-	return nil
-}
-
 // 节点之间同步高度
 func (s *Server) sendGetStatusMessage(peer *TCPPeer) error {
 	var (
@@ -366,6 +342,41 @@ func (s *Server) broadcast(payload []byte) error {
 			return err
 		}
 	}
+	
+	return nil
+}
+
+func (s *Server) processBlock(b *core.Block) error {
+	if err := s.chain.AddBlock(b); err != nil {
+		return err
+	}
+
+	go s.broadcastBlock(b)
+
+	return nil
+}
+
+func (s *Server) processTransaction(tx *core.Transaction) error {
+	hash := tx.Hash(core.TxHasher{})
+
+	if s.mempool.Contains(hash) {
+		return nil
+	}
+
+	if err := tx.Verify(); err != nil {
+		return err
+	}
+
+	// s.Logger.Log(
+	// 	"msg", "adding new tx to mempool",
+	// 	"hash", hash.ToHexString(),
+	// 	"mempoolLength", s.memPool.Len(),
+	// )
+
+	go s.broadcastTx(tx)
+
+	s.mempool.Add(tx)
+
 	return nil
 }
 
@@ -375,7 +386,7 @@ func (s *Server) requestBlocksLoop(peer net.Addr) error {
 	for {
 		ourHeight := s.chain.Height()
 
-		// s.Logger.Log("msg", "requesting new blocks", "requesting height", ourHeight+1)
+		s.Logger.Log("msg", "requesting new blocks", "requesting height", ourHeight+1)
 
 		getBlocksMessage := &GetBlocksMessage{
 			From: ourHeight + 1,
@@ -451,6 +462,8 @@ func (s *Server) createNewBlock() error {
 		return err
 	}
 
+	// ppending pool of tx 映射在 validator 的节点 
+	// 普通节点没有 pending pool
 	s.mempool.ClearPending()
 
 	go s.broadcastBlock(block)
@@ -473,7 +486,6 @@ func genesisBlock() *core.Block {
 	tx.From = coinbase
 	tx.To = coinbase
 	tx.Value = 10_000_000
-
 	b.Transactions = append(b.Transactions, tx)
 
 	privKey := crypto.GeneratePrivateKey()

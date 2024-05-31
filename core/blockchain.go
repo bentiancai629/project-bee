@@ -25,9 +25,7 @@ type Blockchain struct {
 	stateLock       sync.RWMutex
 	collectionState map[types.Hash]*CollectionTx
 	mintState       map[types.Hash]*MintTx
-
-	validator Validator
-
+	validator       Validator
 	// TODO: make this an interface.
 	contractState *State
 }
@@ -37,10 +35,9 @@ func NewBlockchain(l log.Logger, genesis *Block) (*Blockchain, error) {
 	accountState := NewAccountState()
 
 	coinbase := crypto.PublicKey{}
-	accountState.CreateAccount(coinbase.Address())
+	accountState.CreateAccount(coinbase.Address()) // coinbase 账户建立
 
 	bc := &Blockchain{
-		// 合约状态存储
 		contractState:   NewState(),
 		headers:         []*Header{},
 		store:           NewMemorystore(),
@@ -51,9 +48,9 @@ func NewBlockchain(l log.Logger, genesis *Block) (*Blockchain, error) {
 		blockStore:      make(map[types.Hash]*Block),
 		txStore:         make(map[types.Hash]*Transaction),
 	}
-	bc.validator = NewBlockchainValidator(bc)
+	bc.validator = NewBlockchainValidator(bc) // type BlockValidator struct { bc *Blockchain}
 
-	err := bc.addBlockWithoutValidation(genesis)
+	err := bc.addBlockWithoutValidation(genesis) // 创世区块
 	return bc, err
 }
 
@@ -81,6 +78,7 @@ func (bc *Blockchain) handleNativeTransfer(tx *Transaction) error {
 
 func (bc *Blockchain) handleNativeNFT(tx *Transaction) error {
 	hash := tx.Hash(TxHasher{})
+
 	switch t := tx.TxInner.(type) {
 	case CollectionTx:
 		bc.collectionState[hash] = &t
@@ -94,10 +92,12 @@ func (bc *Blockchain) handleNativeNFT(tx *Transaction) error {
 
 		bc.logger.Log("msg", "created new NFT mint", "NFT", t.NFT, "collection", t.Collection)
 	default:
-		fmt.Printf("unsupported tx type: %v", t)
+		return fmt.Errorf("unsupported tx type %v", t)
 	}
+
 	return nil
 }
+
 func (bc *Blockchain) GetBlockByHash(hash types.Hash) (*Block, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
@@ -121,7 +121,6 @@ func (bc *Blockchain) GetBlock(height uint32) (*Block, error) {
 	return bc.blocks[height], nil
 }
 
-// 拿到区块头
 func (bc *Blockchain) GetHeader(height uint32) (*Header, error) {
 	if height > bc.Height() {
 		return nil, fmt.Errorf("given height (%d) too high", height)
@@ -136,7 +135,6 @@ func (bc *Blockchain) GetTxByHash(hash types.Hash) (*Transaction, error) {
 	bc.lock.Lock()
 	defer bc.lock.Unlock()
 
-	fmt.Println("len:", len(bc.txStore))
 	tx, ok := bc.txStore[hash]
 	if !ok {
 		return nil, fmt.Errorf("could not find tx with hash (%s)", hash)
@@ -153,11 +151,11 @@ func (bc *Blockchain) HasBlock(height uint32) bool {
 func (bc *Blockchain) Height() uint32 {
 	bc.lock.RLock()
 	defer bc.lock.RUnlock()
+
 	return uint32(len(bc.headers) - 1)
 }
 
 func (bc *Blockchain) handleTransaction(tx *Transaction) error {
-	// If we have data inside execute that data on the VM.
 	if len(tx.Data) > 0 {
 		bc.logger.Log("msg", "executing code", "len", len(tx.Data), "hash", tx.Hash(&TxHasher{}))
 
@@ -167,13 +165,14 @@ func (bc *Blockchain) handleTransaction(tx *Transaction) error {
 		}
 	}
 
+	// 处理 NFT 交易
 	if tx.TxInner != nil {
 		if err := bc.handleNativeNFT(tx); err != nil {
 			return err
 		}
 	}
 
-	// Handle the native transaction here
+	// 处理native token 转账
 	if tx.Value > 0 {
 		if err := bc.handleNativeTransfer(tx); err != nil {
 			return err
@@ -182,6 +181,7 @@ func (bc *Blockchain) handleTransaction(tx *Transaction) error {
 	return nil
 }
 
+// 添加 txHash 到 txScore， header 到 headers， block 到 blocks，
 func (bc *Blockchain) addBlockWithoutValidation(b *Block) error {
 	bc.stateLock.Lock()
 	for i := 0; i < len(b.Transactions); i++ {
@@ -197,9 +197,9 @@ func (bc *Blockchain) addBlockWithoutValidation(b *Block) error {
 
 	bc.stateLock.Unlock()
 
-	fmt.Println("========ACCOUNT STATE==============")
-	fmt.Printf("%+v\n", bc.accountState.accounts)
-	fmt.Println("========ACCOUNT STATE==============")
+	// fmt.Println("========ACCOUNT STATE==============")
+	// fmt.Printf("%+v\n", bc.accountState.accounts)
+	// fmt.Println("========ACCOUNT STATE==============")
 
 	bc.lock.Lock()
 	bc.headers = append(bc.headers, b.Header)
@@ -213,7 +213,7 @@ func (bc *Blockchain) addBlockWithoutValidation(b *Block) error {
 
 	bc.logger.Log(
 		"msg", "new block",
-		"hash", b.Hash(BlockHasher{}).ToHexString(),
+		"hash", b.Hash(BlockHasher{}),
 		"height", b.Height,
 		"transactions", len(b.Transactions),
 	)

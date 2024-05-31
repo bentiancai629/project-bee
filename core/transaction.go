@@ -19,7 +19,6 @@ const (
 type CollectionTx struct {
 	Fee        int64
 	MetaData   []byte
-	Collection types.Hash
 }
 
 type MintTx struct {
@@ -42,9 +41,6 @@ type Transaction struct {
 
 	// cached version of the tx data hash
 	hash types.Hash
-
-	// firstSeen is the timestamp of when this tx is first seen locally
-	firstSeen int64
 }
 
 func NewTransaction(data []byte) *Transaction {
@@ -63,8 +59,8 @@ func (tx *Transaction) Hash(hasher Hasher[*Transaction]) types.Hash {
 }
 
 func (tx *Transaction) Sign(privKey crypto.PrivateKey) error {
-
-	sig, err := privKey.Sign(tx.Data)
+	hash := tx.Hash(TxHasher{})
+	sig, err := privKey.Sign(hash.ToSlice())
 	if err != nil {
 		return err
 	}
@@ -80,7 +76,8 @@ func (tx *Transaction) Verify() error {
 		return fmt.Errorf("transaction has no signature")
 	}
 
-	if !tx.Signature.Verify(tx.From, tx.Data) {
+	hash := tx.Hash(TxHasher{})
+	if !tx.Signature.Verify(tx.From, hash.ToSlice()) {
 		return fmt.Errorf("invalid transaction signature")
 	}
 
@@ -93,14 +90,6 @@ func (tx *Transaction) Decode(dec Decoder[*Transaction]) error {
 
 func (tx *Transaction) Encode(enc Encoder[*Transaction]) error {
 	return enc.Encode(tx)
-}
-
-func (tx *Transaction) SetFirstSeen(t int64) {
-	tx.firstSeen = t
-}
-
-func (tx *Transaction) FirstSeen() int64 {
-	return tx.firstSeen
 }
 
 func init() {

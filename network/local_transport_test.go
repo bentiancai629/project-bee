@@ -1,10 +1,10 @@
 package network
 
 import (
-	// "io/ioutil"
+	_ "io/ioutil"
 	"testing"
 
-	// "github.com/stretchr/testify/assert"
+	_ "github.com/stretchr/testify/assert"
 )
 
 func TestConnect(t *testing.T) {
@@ -36,23 +36,23 @@ func TestSendMessage(t *testing.T) {
 }
 
 func TestBroadcast(t *testing.T) {
-// 	tra := NewLocalTransport("A")
-// 	trb := NewLocalTransport("B")
-// 	trc := NewLocalTransport("C")
+	// 	tra := NewLocalTransport("A")
+	// 	trb := NewLocalTransport("B")
+	// 	trc := NewLocalTransport("C")
 
-// 	tra.Connect(trb)
-// 	tra.Connect(trc)
+	// 	tra.Connect(trb)
+	// 	tra.Connect(trc)
 
-// 	msg := []byte("foo")
-// 	assert.Nil(t, tra.Broadcast(msg))
+	// 	msg := []byte("foo")
+	// 	assert.Nil(t, tra.Broadcast(msg))
 
-// 	rpcb := <-trb.Consume()
-// 	b, err := ioutil.ReadAll(rpcb.Payload)
-// 	assert.Nil(t, err)
-// 	assert.Equal(t, b, msg)
+	// 	rpcb := <-trb.Consume()
+	// 	b, err := ioutil.ReadAll(rpcb.Payload)
+	// 	assert.Nil(t, err)
+	// 	assert.Equal(t, b, msg)
 
-// 	rpcC := <-trc.Consume()
-// 	b, err = ioutil.ReadAll(rpcC.Payload)
-// 	assert.Nil(t, err)
-// 	assert.Equal(t, b, msg)
+	// rpcC := <-trc.Consume()
+	// b, err = ioutil.ReadAll(rpcC.Payload)
+	// assert.Nil(t, err)
+	// assert.Equal(t, b, msg)
 }

@@ -20,6 +20,7 @@ func (l *List[T]) Get(index int) T {
 		err := fmt.Sprintf("the given index (%d) is higher than the length (%d)", index, len(l.Data))
 		panic(err)
 	}
+
 	return l.Data[index]
 }
 
@@ -60,6 +61,7 @@ func (l *List[T]) Contains(v T) bool {
 			return true
 		}
 	}
+	
 	return false
 }
 

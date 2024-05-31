@@ -19,7 +19,7 @@ type Header struct {
 	Timestamp     int64
 }
 
-// header 头序列化成2进制
+// header 头序列化成2进制[]byte
 func (h *Header) Bytes() []byte {
 	buf := &bytes.Buffer{}
 	enc := gob.NewEncoder(buf)
@@ -30,11 +30,12 @@ func (h *Header) Bytes() []byte {
 
 type Block struct {
 	*Header
+
 	Transactions []*Transaction
 	Validator    crypto.PublicKey
 	Signature    *crypto.Signature
 
-	// Cached version of the header hash
+	// 区块头 hash 缓存
 	hash types.Hash
 }
 
@@ -53,7 +54,7 @@ func NewBlockFromPrevHeader(prevHeader *Header, txs []*Transaction) (*Block, err
 
 	header := &Header{
 		Version:       1,
-		Height:        prevHeader.Height + 1,
+		Height:        prevHeader.Height + 1, // 新高度
 		DataHash:      dataHash,
 		PrevBlockHash: BlockHasher{}.Hash(prevHeader),
 		Timestamp:     time.Now().UnixNano(),
@@ -64,6 +65,8 @@ func NewBlockFromPrevHeader(prevHeader *Header, txs []*Transaction) (*Block, err
 
 func (b *Block) AddTransaction(tx *Transaction) {
 	b.Transactions = append(b.Transactions, tx)
+	hash, _ := CalculateDataHash(b.Transactions)
+	b.DataHash = hash
 }
 
 func (b *Block) Sign(privKey crypto.PrivateKey) error {
@@ -78,6 +81,7 @@ func (b *Block) Sign(privKey crypto.PrivateKey) error {
 	return nil
 }
 
+// 对 signature 和 tx 都要需要 verify
 func (b *Block) Verify() error {
 	if b.Signature == nil {
 		return fmt.Errorf("block has no signature")
@@ -99,6 +103,8 @@ func (b *Block) Verify() error {
 		return err
 	}
 	if dataHash != b.DataHash {
+		fmt.Printf("dataHash: %v", dataHash)
+		fmt.Printf("b.DataHash: %v", b.DataHash)
 		return fmt.Errorf("block (%s) has an invalid data hash", b.Hash(BlockHasher{}))
 	}
 
@@ -113,7 +119,7 @@ func (b *Block) Encode(enc Encoder[*Block]) error {
 	return enc.Encode(b)
 }
 
-// 对 header 哈西
+// 对区块头进行 hash, 如果缓存存在直接返回
 func (b *Block) Hash(hasher Hasher[*Header]) types.Hash {
 	if b.hash.IsZero() {
 		b.hash = hasher.Hash(b.Header)

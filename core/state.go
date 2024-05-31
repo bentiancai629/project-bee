@@ -14,6 +14,13 @@ func NewState() *State {
 
 func (s *State) Put(k, v []byte) error {
 	s.data[string(k)] = v
+
+	return nil
+}
+
+func (s *State) Delete(k []byte) error {
+	delete(s.data, string(k))
+	
 	return nil
 }
 
@@ -25,8 +32,4 @@ func (s *State) Get(k []byte) ([]byte, error) {
 	}
 
 	return value, nil
-}
-func (s *State) Delete(k []byte) error {
-	delete(s.data, string(k))
-	return nil
 }

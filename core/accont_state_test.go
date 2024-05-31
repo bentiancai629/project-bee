@@ -35,7 +35,6 @@ func TestTransferFailInsufficientBalance(t *testing.T) {
 
 	amount := uint64(100)
 	assert.NotNil(t, state.Transfer(addressBob, addressAlice, amount))
-
 	assert.Equal(t, accountAlice.Balance, uint64(0))
 }
 

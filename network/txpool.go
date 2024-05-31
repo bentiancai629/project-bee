@@ -1,44 +1,18 @@
 package network
 
 import (
-	"sort"
 	"sync"
 
 	"project-bee/core"
 	"project-bee/types"
 )
 
-type TxMapSorter struct {
-	transactions []*core.Transaction
-}
-
-func NewTxMapSorter(txMap map[types.Hash]*core.Transaction) *TxMapSorter {
-	txs := make([]*core.Transaction, len(txMap))
-
-	i := 0
-	for _, val := range txMap {
-		txs[i] = val
-		i++
-	}
-
-	s := &TxMapSorter{txs}
-
-	sort.Sort(s)
-
-	return s
-}
-
-func (s *TxMapSorter) Len() int { return len(s.transactions) }
-func (s *TxMapSorter) Swap(i, j int) {
-	s.transactions[i], s.transactions[j] = s.transactions[j], s.transactions[i]
-}
-func (s *TxMapSorter) Less(i, j int) bool {
-	return s.transactions[i].FirstSeen() < s.transactions[j].FirstSeen()
-}
-
 type TxPool struct {
-	all       *TxSortedMap
-	pending   *TxSortedMap
+	all     *TxSortedMap
+	pending *TxSortedMap
+
+	// maxlength 是 tx 的总数
+	// 满了会剔除最早的 tx
 	maxLength int
 }
 
@@ -46,11 +20,12 @@ func NewTxPool(maxLength int) *TxPool {
 	return &TxPool{
 		all:       NewTxSortedMap(),
 		pending:   NewTxSortedMap(),
-		maxLength: 100,
+		maxLength: maxLength,
 	}
 }
 
 func (p *TxPool) Add(tx *core.Transaction) {
+	// 如果 txpool 满了 剔除最早的 tx
 	if p.all.Count() == p.maxLength {
 		oldest := p.all.First()
 		p.all.Remove(oldest.Hash(core.TxHasher{}))

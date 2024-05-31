@@ -37,10 +37,7 @@ func (s *AccountState) CreateAccount(address types.Address) *Account {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	acc := &Account{
-		Address: address,
-		Balance: 0,
-	}
+	acc := &Account{Address: address}
 	s.accounts[address] = acc
 	return acc
 }

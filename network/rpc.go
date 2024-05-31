@@ -54,6 +54,7 @@ type DecodedMessage struct {
 
 type RPCDecodeFunc func(RPC) (*DecodedMessage, error)
 
+// 解码 RPC 请求
 func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 	msg := Message{}
 	if err := gob.NewDecoder(rpc.Payload).Decode(&msg); err != nil {
@@ -65,10 +66,13 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 		"type": msg.Header,
 	}).Debug("new incoming message")
 
+
+	// 解码请求中的 payload
 	switch msg.Header {
+
+	// /tx/:
 	case MessageTypeTx:
 		tx := new(core.Transaction)
-		// msg.data 解码后 放入 tx.Data
 		if err := tx.Decode(core.NewGobTxDecoder(bytes.NewReader(msg.Data))); err != nil {
 			return nil, err
 		}
@@ -77,6 +81,8 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: tx,
 		}, nil
+
+	// /block/:
 	case MessageTypeBock:  // 接收区块？
 		block := new(core.Block)
 		if err := block.Decode(core.NewGobBlockDecoder(bytes.NewReader(msg.Data))); err != nil {
@@ -87,12 +93,14 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: block,
 		}, nil
+
 	case MessageTypeGetStatus:
 
 		return &DecodedMessage{
 			From: rpc.From,
 			Data: &GetStatusMessage{},
 		}, nil
+
 	case MessageTypeStatus: // 同步状态消息
 		statusMessage := new(StatusMessage)
 		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(statusMessage); err != nil {
@@ -103,6 +111,7 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: statusMessage,
 		}, nil
+		
 	case MessageTypeGetBlocks: // 同步区块信息
 		getBlocks := new(GetBlocksMessage)
 		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(getBlocks); err != nil {
@@ -113,6 +122,7 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: getBlocks,
 		}, nil
+
 	case MessageTypeBlocks: // 同步区块高度
 		blocks := new(BlocksMessage)
 		if err := gob.NewDecoder(bytes.NewReader(msg.Data)).Decode(blocks); err != nil {
@@ -122,6 +132,7 @@ func DefaultRPCDecodeFunc(rpc RPC) (*DecodedMessage, error) {
 			From: rpc.From,
 			Data: blocks,
 		}, nil
+
 	default:
 		return nil, fmt.Errorf("invalid message header %x", msg.Header)
 	}

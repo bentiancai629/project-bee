@@ -92,8 +92,9 @@ func (s *Server) handleGetTx(c echo.Context) error {
 
 func (s *Server) handleGetBlock(c echo.Context) error {
 	hashOrID := c.Param("hashorid")
-	// If the error is nil we can assume the height of the block is given.
+
 	height, err := strconv.Atoi(hashOrID)
+	// 加入 nil 为空 参数是区块高度
 	if err == nil {
 		block, err := s.bc.GetBlock(uint32(height))
 		if err != nil {
@@ -103,8 +104,8 @@ func (s *Server) handleGetBlock(c echo.Context) error {
 		return c.JSON(http.StatusOK, intoJSONBlock(block))
 	}
 
-	// otherwise assume its the hash
 	b, err := hex.DecodeString(hashOrID)
+	// 不然就默认为 hash
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, APIError{Error: err.Error()})
 	}

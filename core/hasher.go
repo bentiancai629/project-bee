@@ -14,6 +14,7 @@ type Hasher[T any] interface {
 
 type BlockHasher struct{}
 
+// 椭圆曲线签名 对 bytes 进行哈西
 func (BlockHasher) Hash(b *Header) types.Hash {
 	h := sha256.Sum256(b.Bytes())
 	return types.Hash(h)
@@ -31,5 +32,5 @@ func (TxHasher) Hash(tx *Transaction) types.Hash {
 	binary.Write(buf, binary.LittleEndian, tx.From)
 	binary.Write(buf, binary.LittleEndian, tx.Nonce)
 
-	return types.Hash(sha256.Sum256(tx.Data))
+	return types.Hash(sha256.Sum256(buf.Bytes()))
 }
